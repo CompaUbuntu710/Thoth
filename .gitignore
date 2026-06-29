@@ -6,3 +6,4 @@ __pycache__/
 *.db
 .DS_Store
 *.log
+voice/vosk-model-small-es-0.42/

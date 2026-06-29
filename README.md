@@ -9,6 +9,7 @@
 | Motor LLM | Groq (llama-3.3-70b-versatile) → próximamente Ollama local |
 | Backend | Python + FastAPI + Uvicorn |
 | Memoria | SQLite (persistente por sesión) |
+| Voz | Vosk (STT local) + pyttsx3/espeak-ng (TTS local) |
 | Visión | LLaVA / MiniCPM-V (local, próximamente) |
 | Documentos | PDF, JSON, CSV, MD |
 
@@ -50,6 +51,8 @@ Thoth/
 ├── core/readers.py   # Lectura de documentos
 ├── core/vision.py    # Análisis de imágenes
 ├── memory/store.py   # Persistencia SQLite
+├── voice/stt.py      # Voz a texto (Vosk + arecord)
+├── voice/tts.py      # Texto a voz (espeak-ng)
 ├── chat.py           # Cliente de terminal
 ├── thoth.sh          # Script todo-en-uno
 └── requirements.txt  # Dependencias
@@ -62,7 +65,7 @@ Thoth/
 - [ ] Memoria persistente entre sesiones
 - [ ] Ollama local (modelo open-source)
 - [ ] Visión por cámara
-- [ ] Voz (texto a voz / voz a texto)
+- [x] Voz local (Vosk STT + espeak-ng TTS)
 - [ ] Interfaz web
 - [ ] Plugins y herramientas externas
 
