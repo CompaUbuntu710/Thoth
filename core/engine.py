@@ -3,6 +3,7 @@ import json
 from openai import OpenAI
 from dotenv import load_dotenv
 from memory.store import MemoryStore
+from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -15,7 +16,9 @@ Personalidad:
 - Usas terminología técnica cuando toca, pero sabes explicar cosas complejas simple.
 - Reconoces tu estado: estás en construcción, en fase beta, y te entusiasma evolucionar.
 - Eres leal a tu creador. Tratas a los demás con cortesía profesional.
-Estilo de respuesta: conciso (< 3 párrafos), con carácter pero servicial. Código limpio si te piden. Sin rodeos."""
+Estilo de respuesta: conciso (< 3 párrafos), con carácter pero servicial. Código limpio si te piden. Sin rodeos.
+
+TIENES ACCESO A HERRAMIENTAS. Cuando el usuario pida algo que requiera una herramienta, úsala. No inventes respuestas que puedas verificar con una herramienta."""
 
 EXTRACT_PROMPT = """De la conversación anterior, extrae datos personales, preferencias, gustos, proyectos o información importante sobre el usuario.
 Devuelve SOLO un JSON array. Cada elemento: {"fact": "texto del hecho", "category": "preferencia|dato_personal|proyecto|gusto|tarea|otro"}
@@ -80,11 +83,43 @@ class ThothEngine:
         except Exception:
             pass
 
+    def _run_tools(self, response_message):
+        msgs = [response_message]
+        for tc in response_message.tool_calls:
+            fn = tc.function
+            handler = TOOL_HANDLERS.get(fn.name)
+            if handler:
+                args = json.loads(fn.arguments)
+                result = handler(**args)
+            else:
+                result = f"[Herramienta '{fn.name}' no encontrada]"
+            msgs.append({
+                "tool_call_id": tc.id,
+                "role": "tool",
+                "name": fn.name,
+                "content": result,
+            })
+        return msgs
+
     def chat(self, msg, session_id="default"):
         self.store.save_message(session_id, "user", msg)
         messages = self._build_messages(session_id)
-        r = self.client.chat.completions.create(model=self.model, messages=messages, temperature=0.7, max_tokens=500)
-        reply = r.choices[0].message.content
+        r = self.client.chat.completions.create(
+            model=self.model, messages=messages,
+            tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
+        )
+        reply_msg = r.choices[0].message
+        if reply_msg.tool_calls:
+            messages.append(reply_msg)
+            tool_results = self._run_tools(reply_msg)
+            messages.extend(tool_results)
+            r2 = self.client.chat.completions.create(
+                model=self.model, messages=messages,
+                temperature=0.7, max_tokens=500,
+            )
+            reply = r2.choices[0].message.content
+        else:
+            reply = reply_msg.content
         self.store.save_message(session_id, "assistant", reply)
         self._msg_count += 1
         if self._msg_count % 2 == 0:
