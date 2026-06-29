@@ -93,6 +93,8 @@ def handle_run_command(command):
 
 def handle_web_search(query):
     try:
+        import warnings
+        warnings.filterwarnings("ignore", message=".*renamed to ddgs.*")
         from duckduckgo_search import DDGS
         headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
         with DDGS(headers=headers) as ddgs:

@@ -103,28 +103,36 @@ class ThothEngine:
             })
         return msgs
 
+    def _call(self, messages, **kwargs):
+        return self.client.chat.completions.create(
+            model=self.model, messages=messages,
+            temperature=0.7, max_tokens=500, **kwargs,
+        )
+
     def chat(self, msg, session_id="default"):
         self.store.save_message(session_id, "user", msg)
         messages = self._build_messages(session_id)
         try:
-            r = self.client.chat.completions.create(
-                model=self.model, messages=messages,
-                tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
-            )
+            r = self._call(messages, tools=TOOL_SCHEMAS)
             reply_msg = r.choices[0].message
             if reply_msg.tool_calls:
                 messages.append(reply_msg)
                 tool_results = self._run_tools(reply_msg)
                 messages.extend(tool_results)
-                r2 = self.client.chat.completions.create(
-                    model=self.model, messages=messages,
-                    tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
-                )
-                reply = r2.choices[0].message.content or ""
+                try:
+                    r2 = self._call(messages, tools=TOOL_SCHEMAS)
+                    reply = r2.choices[0].message.content or ""
+                except Exception:
+                    r2 = self._call(messages)
+                    reply = r2.choices[0].message.content or ""
             else:
                 reply = reply_msg.content or ""
         except Exception as e:
-            reply = f"[Error procesando mensaje: {e}]"
+            try:
+                r = self._call(messages)
+                reply = r.choices[0].message.content or ""
+            except Exception as e2:
+                reply = f"[Error: {e2}]"
         self.store.save_message(session_id, "assistant", reply)
         self._msg_count += 1
         if self._msg_count % 2 == 0:
