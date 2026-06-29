@@ -4,12 +4,14 @@ import sys
 SESSION = "default"
 
 try:
-    from voice import listen, speak
+    from voice import listen, speak, wait_for_wake
     VOICE_ENABLED = True
 except ImportError:
     VOICE_ENABLED = False
+    wait_for_wake = None
 
-TTS_ON = "--tts" in sys.argv
+WAKE_ON = "--wake" in sys.argv
+TTS_ON = "--no-tts" not in sys.argv
 USE_SERVER = "--server" in sys.argv
 
 if USE_SERVER:
@@ -53,15 +55,20 @@ else:
         return _engine.recall()
 
 os.system("clear")
-print("╔══════════════════════════════════╗")
-print("║   𓁞  THOTH — Chat Terminal       ║")
-print("║   Enter vacío → voz              ║")
-print("║   :tts          → toggle voz     ║")
-print("║   :recuerda X   → guardar hecho  ║")
-print("║   :olvida X     → borrar hecho   ║")
-print("║   :recuerdos    → listar hechos  ║")
-print("║   'salir'       → terminar       ║")
-print("╚══════════════════════════════════╝\n")
+print("╔══════════════════════════════════════════╗")
+print("║   𓁞  THOTH — Chat Terminal               ║")
+print("║   Enter vacío → voz                      ║")
+print("║   :tts          → toggle voz salida      ║")
+print("║   :recuerda X   → guardar hecho          ║")
+print("║   :olvida X     → borrar hecho           ║")
+print("║   :recuerdos    → listar hechos          ║")
+print("║   --wake        → despertar por voz      ║")
+print("║   --no-tts      → desactivar voz         ║")
+print("║   'salir'       → terminar               ║")
+print("╚══════════════════════════════════════════╝\n")
+
+if WAKE_ON and wait_for_wake:
+    wait_for_wake()
 
 while True:
     try:
