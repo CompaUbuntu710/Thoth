@@ -231,6 +231,7 @@ python3 chat.py --tts      # con voz
 |---|---|---|
 | `sessions` | id, created_at, updated_at | Sesiones de chat |
 | `messages` | id, session_id, role, content, timestamp | Historial de mensajes |
+| `facts` | id, fact (UNIQUE), category, source_session, created_at, updated_at | Memoria de largo plazo |
 | `documents` | id, name, type, content, path, created_at | Documentos procesados |
 
 ### Funciones principales
@@ -240,8 +241,25 @@ store = MemoryStore()
 store.save_message("default", "user", "Hola Thoth")
 store.save_message("default", "assistant", "¡Hola!")
 history = store.get_history("default", limit=50)
+store.save_fact("Al usuario le gusta el cafe", "gusto")
+facts = store.get_facts()         # Todos
+facts = store.get_facts("cafe")   # Búsqueda
+store.delete_fact("Al usuario le gusta el cafe")
 store.save_document("notas.pdf", "pdf", content=texto)
 ```
+
+### Memoria persistente de largo plazo
+
+Thoth extrae automáticamente hechos cada 2 mensajes usando `llama-3.1-8b-instant`.
+Los hechos se inyectan en el system prompt de cada conversación.
+
+**Comandos del chat:**
+
+| Comando | Qué hace |
+|---|---|
+| `:recuerda X` | Guarda el hecho X explícitamente |
+| `:olvida X` | Borra el hecho X |
+| `:recuerdos` | Lista todo lo que Thoth recuerda |
 
 **Archivo DB:** `memory/thoth.db` (gitignored)
 
@@ -310,7 +328,8 @@ curl -X POST http://localhost:8000/chat \
 - [x] Backend funcional con Groq (Llama 3.3 70B)
 - [x] Chat por terminal
 - [x] README y documentación
-- [x] Memoria SQLite persistente
+- [x] Memoria SQLite persistente (historial por sesión)
+- [x] Memoria de largo plazo (hechos extraídos automáticamente)
 - [x] Voz local (Vosk STT + espeak-ng TTS)
 - [x] Chat con voz integrada (Enter para hablar)
 - [x] Script todo-en-uno (server + chat en 1 terminal)
@@ -321,7 +340,6 @@ curl -X POST http://localhost:8000/chat \
 
 ### Pendiente
 
-- [ ] Memoria persistente entre reinicios (cargar historial al iniciar)
 - [ ] Tool use / function calling (ejecutar comandos, web search, etc.)
 - [ ] Despertar por voz (hotword "Hey Thoth")
 - [ ] Ollama local (modelo open-source sin depender de Groq)
