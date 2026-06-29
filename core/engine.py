@@ -89,14 +89,16 @@ class ThothEngine:
             fn = tc.function
             handler = TOOL_HANDLERS.get(fn.name)
             if handler:
-                args = json.loads(fn.arguments)
-                result = handler(**args)
+                try:
+                    args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                    result = handler(**args)
+                except Exception as e:
+                    result = f"[Error ejecutando {fn.name}: {e}]"
             else:
                 result = f"[Herramienta '{fn.name}' no encontrada]"
             msgs.append({
                 "tool_call_id": tc.id,
                 "role": "tool",
-                "name": fn.name,
                 "content": result,
             })
         return msgs
@@ -104,22 +106,25 @@ class ThothEngine:
     def chat(self, msg, session_id="default"):
         self.store.save_message(session_id, "user", msg)
         messages = self._build_messages(session_id)
-        r = self.client.chat.completions.create(
-            model=self.model, messages=messages,
-            tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
-        )
-        reply_msg = r.choices[0].message
-        if reply_msg.tool_calls:
-            messages.append(reply_msg)
-            tool_results = self._run_tools(reply_msg)
-            messages.extend(tool_results)
-            r2 = self.client.chat.completions.create(
+        try:
+            r = self.client.chat.completions.create(
                 model=self.model, messages=messages,
-                temperature=0.7, max_tokens=500,
+                tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
             )
-            reply = r2.choices[0].message.content
-        else:
-            reply = reply_msg.content
+            reply_msg = r.choices[0].message
+            if reply_msg.tool_calls:
+                messages.append(reply_msg)
+                tool_results = self._run_tools(reply_msg)
+                messages.extend(tool_results)
+                r2 = self.client.chat.completions.create(
+                    model=self.model, messages=messages,
+                    tools=TOOL_SCHEMAS, temperature=0.7, max_tokens=500,
+                )
+                reply = r2.choices[0].message.content or ""
+            else:
+                reply = reply_msg.content or ""
+        except Exception as e:
+            reply = f"[Error procesando mensaje: {e}]"
         self.store.save_message(session_id, "assistant", reply)
         self._msg_count += 1
         if self._msg_count % 2 == 0:

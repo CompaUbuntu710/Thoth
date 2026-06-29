@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "thoth.db")
 
@@ -53,7 +53,7 @@ class MemoryStore:
         self.conn.commit()
 
     def get_or_create_session(self, session_id):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cur = self.conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
         if cur.fetchone() is None:
             self.conn.execute(
@@ -64,7 +64,7 @@ class MemoryStore:
 
     def save_message(self, session_id, role, content):
         self.get_or_create_session(session_id)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
             (session_id, role, content, now),
@@ -83,7 +83,7 @@ class MemoryStore:
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
 
     def save_fact(self, fact, category="general", source_session=None):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         try:
             self.conn.execute(
                 "INSERT INTO facts (fact, category, source_session, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -119,7 +119,7 @@ class MemoryStore:
         self.conn.commit()
 
     def save_document(self, name, doc_type, content=None, path=None):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             "INSERT INTO documents (name, type, content, path, created_at) VALUES (?, ?, ?, ?, ?)",
             (name, doc_type, content, path, now),
