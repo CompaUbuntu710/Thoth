@@ -1,8 +1,6 @@
-import requests
 import os
 import sys
 
-URL = "http://localhost:8000/chat"
 SESSION = "default"
 
 try:
@@ -12,12 +10,52 @@ except ImportError:
     VOICE_ENABLED = False
 
 TTS_ON = "--tts" in sys.argv
+USE_SERVER = "--server" in sys.argv
+
+if USE_SERVER:
+    import requests
+    URL = "http://localhost:8000"
+
+    def send(msg):
+        r = requests.post(f"{URL}/chat", json={"message": msg, "session_id": SESSION})
+        return r.json().get("reply", f"[Error {r.status_code}]")
+
+    def do_remember(fact):
+        requests.post(f"{URL}/remember", json={"message": fact, "session_id": SESSION})
+        return f"Recordado: {fact}"
+
+    def do_forget(fact):
+        requests.post(f"{URL}/forget", json={"fact": fact, "session_id": SESSION})
+        return f"Olvidado: {fact}"
+
+    def do_recall():
+        r = requests.get(f"{URL}/memories")
+        return r.json().get("facts", [])
+else:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from core.engine import ThothEngine
+    from memory.store import MemoryStore
+    _store = MemoryStore()
+    _engine = ThothEngine(store=_store)
+
+    def send(msg):
+        return _engine.chat(msg, SESSION)
+
+    def do_remember(fact):
+        _engine.remember(fact)
+        return f"Recordado: {fact}"
+
+    def do_forget(fact):
+        _engine.forget(fact)
+        return f"Olvidado: {fact}"
+
+    def do_recall():
+        return _engine.recall()
 
 os.system("clear")
 print("╔══════════════════════════════════╗")
 print("║   𓁞  THOTH — Chat Terminal       ║")
 print("║   Enter vacío → voz              ║")
-print("║   :v            → voz            ║")
 print("║   :tts          → toggle voz     ║")
 print("║   :recuerda X   → guardar hecho  ║")
 print("║   :olvida X     → borrar hecho   ║")
@@ -34,7 +72,7 @@ while True:
 
         if not msg and VOICE_ENABLED:
             msg = listen(duration=5)
-            if msg.startswith("[No te escuché") or msg.startswith("[Error"):
+            if not msg or msg.startswith("[No te escuché") or msg.startswith("[Error"):
                 continue
 
         if not msg:
@@ -46,20 +84,15 @@ while True:
             continue
 
         if msg.lower().startswith(":recuerda "):
-            fact = msg[10:]
-            requests.post(URL + "/remember", json={"message": fact, "session_id": SESSION})
-            print(f"  Recordado: {fact}\n")
+            print(f"  {do_remember(msg[10:])}\n")
             continue
 
         if msg.lower().startswith(":olvida "):
-            fact = msg[8:]
-            requests.post(URL + "/forget", json={"fact": fact, "session_id": SESSION})
-            print(f"  Olvidado: {fact}\n")
+            print(f"  {do_forget(msg[8:])}\n")
             continue
 
         if msg.lower() == ":recuerdos":
-            r = requests.get(URL + "/memories")
-            facts = r.json().get("facts", [])
+            facts = do_recall()
             if facts:
                 print("  Thoth recuerda:")
                 for f in facts:
@@ -73,21 +106,13 @@ while True:
             print("\nThoth → Hasta pronto.\n")
             break
 
-        res = requests.post(URL, json={"message": msg, "session_id": SESSION})
-        data = res.json()
-
-        if "reply" in data:
-            reply = data["reply"]
-            print(f"\nThoth → {reply}\n")
-            if TTS_ON:
-                speak(reply)
-        elif res.status_code == 500:
-            print("\nThoth → [Límite de tokens alcanzado. Espera un momento y vuelve a intentarlo.]\n")
-        else:
-            print(f"\nThoth → [Error {res.status_code}]\n")
+        reply = send(msg)
+        print(f"\nThoth → {reply}\n")
+        if TTS_ON:
+            speak(reply)
 
     except KeyboardInterrupt:
         print("\n\nThoth → Conexión interrumpida.\n")
         break
     except Exception as e:
-        print(f"\nThoth → [Sin conexión con el servidor: {e}]\n")
+        print(f"\nThoth → [Error: {e}]\n")
