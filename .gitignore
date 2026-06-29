@@ -9,3 +9,4 @@ __pycache__/
 .DS_Store
 *.log
 voice/vosk-model-small-es-0.42/
+voice/piper_voices/
