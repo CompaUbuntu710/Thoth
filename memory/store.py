@@ -31,6 +31,16 @@ class MemoryStore:
             )
         """)
         self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fact TEXT NOT NULL UNIQUE,
+                category TEXT DEFAULT 'general',
+                source_session TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -71,6 +81,42 @@ class MemoryStore:
         )
         rows = cur.fetchall()
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+
+    def save_fact(self, fact, category="general", source_session=None):
+        now = datetime.utcnow().isoformat()
+        try:
+            self.conn.execute(
+                "INSERT INTO facts (fact, category, source_session, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (fact, category, source_session, now, now),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            self.conn.execute(
+                "UPDATE facts SET updated_at = ? WHERE fact = ?", (now, fact)
+            )
+            self.conn.commit()
+            return False
+
+    def get_facts(self, search=None):
+        if search:
+            cur = self.conn.execute(
+                "SELECT fact, category, created_at FROM facts WHERE fact LIKE ? ORDER BY updated_at DESC",
+                (f"%{search}%",),
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT fact, category, created_at FROM facts ORDER BY updated_at DESC"
+            )
+        return [{"fact": r[0], "category": r[1], "created_at": r[2]} for r in cur.fetchall()]
+
+    def delete_fact(self, fact):
+        self.conn.execute("DELETE FROM facts WHERE fact = ?", (fact,))
+        self.conn.commit()
+
+    def clear_facts(self):
+        self.conn.execute("DELETE FROM facts")
+        self.conn.commit()
 
     def save_document(self, name, doc_type, content=None, path=None):
         now = datetime.utcnow().isoformat()

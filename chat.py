@@ -18,7 +18,10 @@ print("╔═══════════════════════�
 print("║   𓁞  THOTH — Chat Terminal       ║")
 print("║   Enter vacío → voz              ║")
 print("║   :v            → voz            ║")
-print("║   :tts          → toggle voz salida║")
+print("║   :tts          → toggle voz     ║")
+print("║   :recuerda X   → guardar hecho  ║")
+print("║   :olvida X     → borrar hecho   ║")
+print("║   :recuerdos    → listar hechos  ║")
 print("║   'salir'       → terminar       ║")
 print("╚══════════════════════════════════╝\n")
 
@@ -40,6 +43,30 @@ while True:
         if msg.lower() == ":tts":
             TTS_ON = not TTS_ON
             print(f"  TTS: {'ON' if TTS_ON else 'OFF'}\n")
+            continue
+
+        if msg.lower().startswith(":recuerda "):
+            fact = msg[10:]
+            requests.post(URL + "/remember", json={"message": fact, "session_id": SESSION})
+            print(f"  Recordado: {fact}\n")
+            continue
+
+        if msg.lower().startswith(":olvida "):
+            fact = msg[8:]
+            requests.post(URL + "/forget", json={"fact": fact, "session_id": SESSION})
+            print(f"  Olvidado: {fact}\n")
+            continue
+
+        if msg.lower() == ":recuerdos":
+            r = requests.get(URL + "/memories")
+            facts = r.json().get("facts", [])
+            if facts:
+                print("  Thoth recuerda:")
+                for f in facts:
+                    print(f"    [{f['category']}] {f['fact']}")
+            else:
+                print("  No recuerdo nada aún")
+            print()
             continue
 
         if msg.lower() in ["salir", "exit", "quit"]:
