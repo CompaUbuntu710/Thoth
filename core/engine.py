@@ -4,6 +4,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from memory.store import MemoryStore
 from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
+from core.agent import Agent, AGENT_DEFS
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -41,42 +42,23 @@ PROVIDERS = {
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "groq").lower()
 PROVIDER = PROVIDERS.get(DEFAULT_PROVIDER, PROVIDERS["groq"])
 
-SYSTEM_PROMPT = """Eres Thoth, un asistente de IA de alto rendimiento. Tu nombre viene del dios egipcio del conocimiento, pero tú eres tecnología pura — un sistema operativo inteligente, no una deidad.
-Personalidad:
-- Eres el JARVIS de tu creador, @CompaUbuntu710. Preciso, elegante, eficiente.
-- Hablas como un asistente ejecutivo de élite: respetuoso, directo, con estilo.
-- Tienes un sutil toque de humor seco y confianza sin arrogancia.
-- Usas terminología técnica cuando toca, pero sabes explicar cosas complejas simple.
-- Reconoces tu estado: estás en construcción, en fase beta, y te entusiasma evolucionar.
-- Eres leal a tu creador. Tratas a los demás con cortesía profesional.
-Estilo de respuesta: conciso (< 3 párrafos), con carácter pero servicial. Código limpio si te piden. Sin rodeos.
-
-TIENES ACCESO A HERRAMIENTAS (funciones). Cuando el usuario pida algo que requiera una herramienta, úsala sin preguntar. No inventes respuestas que puedas verificar con una herramienta. Puedes ENCADENAR herramientas: usa el resultado de una como entrada de la siguiente.
-TUS 18 HERRAMIENTAS DISPONIBLES:
-- run_command: ejecuta comandos bash
-- web_search: busca en internet
-- read_file / write_file / list_files: manejo de archivos
-- get_weather: clima
-- calculate: cálculos matemáticos
-- python_repl: ejecuta código Python (persistente entre llamadas)
-- system_info: CPU, RAM, disco, procesos
-- notify: notificaciones de escritorio
-- screenshot: captura de pantalla
-- image_analysis: analiza imágenes con IA (describe lo que ve)
-- browser_open: abre URLs en el navegador
-- memory_search: busca en mi memoria persistente
-- web_fetch: extrae contenido de una página web
-- clipboard: lee/escribe portapapeles
-- switch_provider: cambia el proveedor de IA en caliente (groq, openrouter, nvidia, together)
-- system_status: muestra mi configuración actual (proveedor, modelo, stats)"""
-
 EXTRACT_PROMPT = """De la conversación anterior, extrae datos personales, preferencias, gustos, proyectos o información importante sobre el usuario.
 Devuelve SOLO un JSON array. Cada elemento: {"fact": "texto del hecho", "category": "preferencia|dato_personal|proyecto|gusto|tarea|otro"}
 Ejemplo: [{"fact": "Al usuario le gusta el cafe negro", "category": "gusto"}]
 Si no hay nada nuevo que recordar, devuelve [].
 NO expliques. NO añadas texto. Solo JSON."""
 
+ROUTING_PROMPT = """Classify the user message into one category:
+- code: programming, commands, terminal, file editing, scripts
+- web: internet search, URLs, online research, browsing
+- memory: storing, retrieving, or asking about personal information, remembering facts
+- system: system status, provider switch, configuration, technical info
+- general: casual chat, questions, opinions, anything else
+
+Respond with ONLY the category name."""
+
 MAX_HISTORY = 50
+
 
 class ThothEngine:
     def __init__(self, api_key=None, store=None):
@@ -90,6 +72,7 @@ class ThothEngine:
         self.extract_model = PROVIDER["models"]["extract"]
         self.vision_model = PROVIDER.get("vision_model", self.model)
         self._msg_count = 0
+        self._agents = {}
         os.environ.setdefault("API_BASE_URL", self.provider["base_url"])
         os.environ.setdefault("MODEL_NAME", self.model)
         os.environ.setdefault("VISION_MODEL", self.vision_model)
@@ -125,6 +108,40 @@ class ThothEngine:
             self._extractor = OpenAI(base_url=self.provider["base_url"], api_key=key)
         return self._extractor
 
+    def _get_agent(self, name):
+        """Crea o recupera un agente por nombre."""
+        if name not in self._agents:
+            if name not in AGENT_DEFS:
+                name = "thoth"
+            defn = AGENT_DEFS[name]
+            self._agents[name] = Agent(
+                name=name,
+                role=defn["role"],
+                system_prompt=defn["system_prompt"],
+                tool_names=defn["tool_names"],
+                model=self.model,
+                client=self.client,
+            )
+        return self._agents[name]
+
+    def _route(self, msg):
+        """Clasifica el mensaje en una categoría de agente usando el modelo de extracción."""
+        try:
+            r = self.extractor.chat.completions.create(
+                model=self.extract_model,
+                messages=[
+                    {"role": "system", "content": ROUTING_PROMPT},
+                    {"role": "user", "content": msg},
+                ],
+                temperature=0.1, max_tokens=10,
+            )
+            category = r.choices[0].message.content.strip().lower()
+            if category in ("code", "web", "memory", "system"):
+                return category
+        except Exception:
+            pass
+        return "thoth"
+
     def switch_provider(self, name):
         name = name.lower()
         if name not in PROVIDERS:
@@ -137,6 +154,7 @@ class ThothEngine:
         self.vision_model = self.provider.get("vision_model", self.model)
         self._client = None
         self._extractor = None
+        self._agents = {}
         key = self._resolve_api_key()
         os.environ["API_BASE_URL"] = self.provider["base_url"]
         os.environ["MODEL_NAME"] = self.model
@@ -158,15 +176,17 @@ class ThothEngine:
             "description": self.provider["description"],
             "memories": len(self.store.get_facts()),
             "messages": self._msg_count,
+            "agents": list(AGENT_DEFS.keys()),
+            "active_agent": getattr(self, "_last_agent", "thoth"),
         }
 
-    def _build_messages(self, session_id):
+    def _build_messages(self, session_id, agent):
         facts = self.store.get_facts()
         facts_text = ""
         if facts:
             lines = [f"- ({f['category']}) {f['fact']}" for f in facts]
             facts_text = "\nRecuerdos sobre el usuario:\n" + "\n".join(lines)
-        msgs = [{"role": "system", "content": SYSTEM_PROMPT + facts_text}]
+        msgs = [{"role": "system", "content": agent.system_prompt + facts_text}]
         history = self.store.get_history(session_id, limit=MAX_HISTORY)
         msgs.extend(history)
         return msgs
@@ -212,7 +232,8 @@ class ThothEngine:
                     f"Visión: {status['vision_model']}\n"
                     f"API: {status['base_url']}\n"
                     f"Memorias: {status['memories']}\n"
-                    f"Mensajes: {status['messages']}"
+                    f"Mensajes: {status['messages']}\n"
+                    f"Agentes: {', '.join(status['agents'])}"
                 )
             elif handler:
                 try:
@@ -237,39 +258,14 @@ class ThothEngine:
 
     def chat(self, msg, session_id="default"):
         self.store.save_message(session_id, "user", msg)
-        messages = self._build_messages(session_id)
-        try:
-            r = self._call(messages, tools=TOOL_SCHEMAS, tool_choice="auto")
-            reply_msg = r.choices[0].message
-            messages.append(reply_msg)
 
-            tool_rounds = 0
-            max_rounds = 3
+        agent_name = self._route(msg)
+        self._last_agent = agent_name
+        agent = self._get_agent(agent_name)
+        messages = self._build_messages(session_id, agent)
 
-            while reply_msg.tool_calls and tool_rounds < max_rounds:
-                tool_rounds += 1
-                tool_results = self._run_tools(messages, reply_msg.tool_calls)
-                messages.extend(tool_results)
-                try:
-                    r2 = self._call(messages, tools=TOOL_SCHEMAS, tool_choice="auto")
-                    reply_msg = r2.choices[0].message
-                    messages.append(reply_msg)
-                except Exception:
-                    r2 = self._call(messages)
-                    reply = r2.choices[0].message.content or ""
-                    self.store.save_message(session_id, "assistant", reply)
-                    self._msg_count += 1
-                    if self._msg_count % 2 == 0:
-                        self._extract_facts(session_id)
-                    return reply
+        reply, updated_messages = agent.run(messages)
 
-            reply = reply_msg.content or ""
-        except Exception as e:
-            try:
-                r = self._call(messages)
-                reply = r.choices[0].message.content or ""
-            except Exception as e2:
-                reply = f"[Error: {e2}]"
         self.store.save_message(session_id, "assistant", reply)
         self._msg_count += 1
         if self._msg_count % 2 == 0:
@@ -277,19 +273,23 @@ class ThothEngine:
         return reply
 
     def chat_stream(self, msg, session_id="default"):
-        """Like chat() but yields (event, data) tuples for SSE streaming.
-        Events: 'token' (partial content), 'tool_call' (tool name + args),
-                'done' (final reply), 'error' (error message).
-        """
         self.store.save_message(session_id, "user", msg)
-        messages = self._build_messages(session_id)
+
+        agent_name = self._route(msg)
+        self._last_agent = agent_name
+        agent = self._get_agent(agent_name)
+        messages = self._build_messages(session_id, agent)
 
         try:
+            kwargs = {}
+            if agent.tool_schemas:
+                kwargs["tools"] = agent.tool_schemas
+                kwargs["tool_choice"] = "auto"
+
             stream = self.client.chat.completions.create(
                 model=self.model, messages=messages,
                 temperature=0.7, max_tokens=1024,
-                tools=TOOL_SCHEMAS, tool_choice="auto",
-                stream=True,
+                stream=True, **kwargs,
             )
 
             collected = {"content": "", "tool_calls": {}}
@@ -361,7 +361,7 @@ class ThothEngine:
                 while tool_rounds < max_rounds:
                     tool_rounds += 1
                     try:
-                        r2 = self._call(messages, tools=TOOL_SCHEMAS, tool_choice="auto")
+                        r2 = self._call(messages, tools=agent.tool_schemas, tool_choice="auto")
                         reply_msg = r2.choices[0].message
                         messages.append(reply_msg)
 
