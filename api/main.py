@@ -31,13 +31,26 @@ async def rate_limit_and_log(request: Request, call_next):
     ip = request.client.host if request.client else "unknown"
     now = time.time()
     window = 60
-    _rate_buckets[ip] = [t for t in _rate_buckets[ip] if t > now - window]
-    if len(_rate_buckets[ip]) >= RATE_LIMIT:
+
+    try:
+        from core.ratelimit import rate_limit
+        allowed = await rate_limit(ip, RATE_LIMIT, window)
+    except Exception:
+        allowed = None
+
+    if allowed is False:
         return JSONResponse(
             status_code=429,
             content={"error": f"Rate limit: {RATE_LIMIT} req/min. Espera un momento."}
         )
-    _rate_buckets[ip].append(now)
+    elif allowed is None:
+        _rate_buckets[ip] = [t for t in _rate_buckets[ip] if t > now - window]
+        if len(_rate_buckets[ip]) >= RATE_LIMIT:
+            return JSONResponse(
+                status_code=429,
+                content={"error": f"Rate limit: {RATE_LIMIT} req/min. Espera un momento."}
+            )
+        _rate_buckets[ip].append(now)
 
     start = time.time()
     response = await call_next(request)
@@ -458,8 +471,27 @@ async def websocket_endpoint(ws: WebSocket):
     await ws_manager.connect(ws)
     try:
         while True:
-            await ws.receive_text()
+            data = await ws.receive_text()
+            if data == "ping":
+                await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
         await ws_manager.disconnect(ws)
+
+@app.websocket("/ws/stats")
+async def stats_websocket(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            stats = {
+                "messages": MSG_COUNT,
+                "memories": len(store.get_facts()),
+                "uptime": int(time.time() - SERVER_START),
+                "provider": engine.provider_name,
+                "connections": ws_manager.count,
+            }
+            await ws.send_json(stats)
+            await asyncio.sleep(3)
+    except WebSocketDisconnect:
+        pass
 
 app.mount("/static", StaticFiles(directory=UI_DIR), name="static")

@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     espeak-ng \
     libsndfile1 \
     ffmpeg \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /root/.local /root/.local
@@ -23,13 +26,19 @@ WORKDIR /thoth
 COPY core/ core/
 COPY api/ api/
 COPY memory/ memory/
+COPY tools/ tools/
+COPY plugins/ plugins/
 COPY ui/ ui/
-COPY voice/voice/__init__.py voice/
-COPY chat.py .
+COPY voice/ voice/
+COPY .env .
+COPY requirements.txt .
+
+RUN playwright install chromium 2>/dev/null || true
 
 ENV PYTHONPATH=/thoth
 ENV HOST=0.0.0.0
 ENV PORT=8000
+ENV REDIS_URL=redis://redis:6379/0
 
 EXPOSE 8000
 

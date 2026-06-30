@@ -905,6 +905,20 @@ function connectWS() {
   ws.onclose = () => setTimeout(connectWS, 3000);
 }
 
+function connectStatsWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let sws = new WebSocket(`${proto}//${location.host}/ws/stats`);
+  sws.onmessage = (event) => {
+    try {
+      const d = JSON.parse(event.data);
+      if (statsProvider) statsProvider.textContent = d.provider || 'groq';
+      if (statsMessages) statsMessages.textContent = d.messages;
+      if (statsRam) statsRam.textContent = d.connections != null ? d.connections + ' WS' : '--';
+    } catch {}
+  };
+  sws.onclose = () => setTimeout(connectStatsWS, 5000);
+}
+
 // ─── Voice ───
 const micBtn = document.getElementById('mic-btn');
 let isRecording = false;
@@ -1012,3 +1026,4 @@ initMindMap();
 setInterval(loadMapData, 15000);
 initMusicPlayer();
 connectWS();
+connectStatsWS();
