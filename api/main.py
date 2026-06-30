@@ -254,6 +254,15 @@ async def profile(username: str = Depends(get_current_user)):
 
 from memory.document_processor import document_store, UPLOAD_DIR, ensure_upload_dir
 
+@app.get("/api/observability")
+def observability(hours: int = 24):
+    from core.observability import get_usage_summary, get_error_log, get_usage_chart
+    return {
+        "summary": get_usage_summary(hours=hours),
+        "chart": get_usage_chart(hours=hours),
+        "errors": get_error_log(limit=20),
+    }
+
 @app.post("/api/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
     ensure_upload_dir()

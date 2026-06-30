@@ -362,6 +362,24 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_agent",
+            "description": "Navega páginas web, hace clic, escribe texto, extrae contenido, toma screenshots o busca en Google. Acciones: navigate, click, type, extract, screenshot, search, current_url, back.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "navigate | click | type | extract | screenshot | search | current_url | back"},
+                    "url": {"type": "string", "description": "URL para navigate, o query para search"},
+                    "selector": {"type": "string", "description": "Selector CSS para click/type/extract, o tag para extract"},
+                    "text": {"type": "string", "description": "Texto para escribir (type)"},
+                    "query": {"type": "string", "description": "Query de búsqueda para search"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 
@@ -742,6 +760,13 @@ def handle_calendar(action, title=None, description="", start_at=None, end_at=No
     except Exception as e:
         return f"[Error en calendario: {e}]"
 
+def handle_browser_agent(action, url=None, selector=None, text=None, query=None):
+    try:
+        from tools.browser_agent import handle_browser_agent as hb
+        return hb(action, url=url, selector=selector, text=text, query=query)
+    except Exception as e:
+        return f"[Error en browser: {e}]"
+
 TOOL_HANDLERS = {
     "run_command": handle_run_command,
     "web_search": handle_web_search,
@@ -766,4 +791,5 @@ TOOL_HANDLERS = {
     "reminder": handle_reminder,
     "alarm": handle_alarm,
     "calendar": handle_calendar,
+    "browser_agent": handle_browser_agent,
 }

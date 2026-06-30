@@ -144,10 +144,21 @@ class ThothEngine:
                 temperature=0.1, max_tokens=10,
             )
             category = r.choices[0].message.content.strip().lower()
+            if hasattr(r, "usage") and r.usage:
+                try:
+                    from core.observability import log_usage
+                    log_usage(self.provider_name, self.extract_model, "router",
+                              r.usage.prompt_tokens or 0, r.usage.completion_tokens or 0)
+                except Exception:
+                    pass
             if category in ("code", "web", "memory", "system"):
                 return category
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                from core.observability import log_error
+                log_error("router", str(e))
+            except Exception:
+                pass
         return "thoth"
 
     def switch_provider(self, name):
@@ -304,6 +315,41 @@ class ThothEngine:
             model=self.model, messages=messages,
             temperature=0.7, max_tokens=1024, **kwargs,
         )
+
+    def _call_with_log(self, messages, agent_name="thoth", session_id="", **kwargs):
+        """Like _call but logs usage to observability."""
+        try:
+            r = self.client.chat.completions.create(
+                model=self.model, messages=messages,
+                temperature=0.7, max_tokens=1024, **kwargs,
+            )
+            if hasattr(r, "usage") and r.usage:
+                try:
+                    from core.observability import log_usage
+                    log_usage(
+                        provider=self.provider_name,
+                        model=self.model,
+                        agent=agent_name,
+                        prompt_tokens=r.usage.prompt_tokens or 0,
+                        completion_tokens=r.usage.completion_tokens or 0,
+                        session_id=session_id,
+                    )
+                except Exception:
+                    pass
+            return r
+        except Exception as e:
+            try:
+                from core.observability import log_usage, log_error
+                log_usage(
+                    provider=self.provider_name,
+                    model=self.model, agent=agent_name,
+                    prompt_tokens=0, completion_tokens=0,
+                    error=str(e), session_id=session_id,
+                )
+                log_error("engine._call_with_log", str(e))
+            except Exception:
+                pass
+            raise
 
     def chat(self, msg, session_id="default"):
         self.store.save_message(session_id, "user", msg)
