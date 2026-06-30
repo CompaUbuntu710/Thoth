@@ -35,7 +35,18 @@ class ForgetRequest(BaseModel):
 
 @app.get("/")
 def index():
+    s = _get_setup()
+    if not s.get("done") and not s.get("skipped"):
+        path = os.path.join(UI_DIR, "setup.html")
+        with open(path, encoding="utf-8") as f:
+            return HTMLResponse(f.read())
     path = os.path.join(UI_DIR, "index.html")
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+@app.get("/setup")
+def setup_page():
+    path = os.path.join(UI_DIR, "setup.html")
     with open(path, encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
@@ -253,6 +264,80 @@ async def profile(username: str = Depends(get_current_user)):
     return {"username": username}
 
 from memory.document_processor import document_store, UPLOAD_DIR, ensure_upload_dir
+
+SETUP_FILE = os.path.join(os.path.dirname(__file__), "..", "memory", "setup.json")
+
+def _get_setup():
+    if not os.path.exists(SETUP_FILE):
+        return {"done": False, "skipped": False}
+    try:
+        with open(SETUP_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {"done": False, "skipped": False}
+
+def _save_setup(data):
+    os.makedirs(os.path.dirname(SETUP_FILE), exist_ok=True)
+    with open(SETUP_FILE, "w") as f:
+        json.dump(data, f)
+
+@app.get("/api/setup/status")
+def setup_status():
+    s = _get_setup()
+    return {"needed": not s.get("done") and not s.get("skipped"), "name": s.get("name", "")}
+
+@app.post("/api/setup/test-key")
+async def test_key(req: Request):
+    body = await req.json()
+    key = body.get("key", "").strip()
+    provider = body.get("provider", "groq")
+    if not key:
+        return {"ok": False, "error": "Key vacía"}
+    cfg = PROVIDERS.get(provider)
+    if not cfg:
+        return {"ok": False, "error": "Proveedor no encontrado"}
+    try:
+        from openai import OpenAI
+        c = OpenAI(base_url=cfg["base_url"], api_key=key)
+        r = c.chat.completions.create(
+            model=cfg["models"]["extract"],
+            messages=[{"role": "user", "content": "responde ok"}],
+            max_tokens=5, temperature=0,
+        )
+        if r.choices:
+            return {"ok": True}
+        return {"ok": False, "error": "Respuesta inesperada"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:100]}
+
+@app.post("/api/setup/complete")
+async def setup_complete(req: Request):
+    body = await req.json()
+    name = body.get("name", "Usuario")
+    groq_key = body.get("groq_key", "")
+    telegram_token = body.get("telegram_token", "")
+    default_provider = body.get("default_provider", "groq")
+    _save_setup({"done": True, "skipped": False, "name": name, "default_provider": default_provider})
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                if not line.startswith("GROQ_API_KEY=") and not line.startswith("TELEGRAM_BOT_TOKEN="):
+                    lines.append(line.rstrip())
+    if groq_key:
+        lines.append(f"GROQ_API_KEY={groq_key}")
+    if telegram_token:
+        lines.append(f"TELEGRAM_BOT_TOKEN={telegram_token}")
+    lines.append(f"DEFAULT_PROVIDER={default_provider}")
+    with open(env_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return {"status": "ok"}
+
+@app.post("/api/setup/skip")
+def setup_skip():
+    _save_setup({"done": False, "skipped": True})
+    return {"status": "ok"}
 
 @app.get("/api/plugins")
 def list_plugins_api():

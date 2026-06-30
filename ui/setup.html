@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup · Thoth</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,sans-serif; background:radial-gradient(ellipse at center,#0a0e1a,#020408); color:#e0e0e0; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .container { max-width:600px; width:90%; padding:2rem; }
+  h1 { font-size:1.8rem; background:linear-gradient(135deg,#00e5ff,#ffd700); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:0.5rem; }
+  .subtitle { color:#888; margin-bottom:2rem; font-size:0.9rem; }
+  .step { display:none; }
+  .step.active { display:block; }
+  .step h2 { font-size:1rem; color:#00e5ff; margin-bottom:0.25rem; }
+  .step p { color:#888; font-size:0.85rem; margin-bottom:1.5rem; }
+  label { display:block; font-size:0.85rem; color:#aaa; margin-bottom:0.3rem; margin-top:1rem; }
+  input { width:100%; padding:0.7rem; background:rgba(255,255,255,0.05); border:1px solid #333; border-radius:6px; color:#fff; font-size:0.9rem; outline:none; transition:border-color .2s; }
+  input:focus { border-color:#00e5ff; }
+  .btn { display:block; width:100%; padding:0.8rem; background:linear-gradient(135deg,#00e5ff,#0088cc); color:#000; border:none; border-radius:6px; font-size:1rem; font-weight:600; cursor:pointer; margin-top:1.5rem; transition:opacity .2s; }
+  .btn:hover { opacity:0.9; }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .skip { display:block; text-align:center; margin-top:0.8rem; color:#555; font-size:0.8rem; cursor:pointer; text-decoration:none; }
+  .skip:hover { color:#888; }
+  .check { color:#00e86e; }
+  .error { color:#ff5555; font-size:0.8rem; margin-top:0.3rem; }
+  .progress { display:flex; gap:0.5rem; justify-content:center; margin-bottom:2rem; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#333; transition:background .3s; }
+  .dot.active { background:#00e5ff; }
+  .dot.done { background:#00e86e; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="progress" id="progress"></div>
+  <h1>Thoth</h1>
+  <p class="subtitle">Configuración inicial de tu asistente inteligente</p>
+
+  <form id="setup-form">
+    <!-- Step 1: Welcome -->
+    <div class="step active" data-step="0">
+      <h2>Bienvenido</h2>
+      <p>Thoth es tu sistema operativo inteligente. Multi-agente, memoria semántica, RAG, plugins, y más.<br><br>Este asistente te guiará en la configuración inicial. Toma 2 minutos.</p>
+      <button type="button" class="btn" onclick="nextStep()">Comenzar →</button>
+      <a class="skip" href="/" onclick="return skipSetup()">Omitir configuración</a>
+    </div>
+
+    <!-- Step 2: Name -->
+    <div class="step" data-step="1">
+      <h2>Tu nombre</h2>
+      <p>¿Cómo debería llamarte Thoth?</p>
+      <label for="user-name">Nombre</label>
+      <input id="user-name" type="text" placeholder="Ej: Juan" value="Usuario">
+      <button type="button" class="btn" onclick="nextStep()">Siguiente →</button>
+    </div>
+
+    <!-- Step 3: API Key -->
+    <div class="step" data-step="2">
+      <h2>API Key</h2>
+      <p>Thoth necesita una API key de IA para funcionar. La opción recomendada es Groq (gratuita, 100k tokens/día).</p>
+      <label for="api-key">GROQ_API_KEY <a href="https://console.groq.com/keys" target="_blank" style="color:#00e5ff;font-size:0.75rem;">(obtener)</a></label>
+      <input id="api-key" type="password" placeholder="gsk_...">
+      <div id="key-error" class="error"></div>
+      <button type="button" class="btn" id="key-btn" onclick="testKey()">Probar y continuar</button>
+    </div>
+
+    <!-- Step 4: Telegram -->
+    <div class="step" data-step="3">
+      <h2>Telegram (opcional)</h2>
+      <p>Conecta Thoth a Telegram para hablar desde tu celular. Necesitas crear un bot en <a href="https://t.me/BotFather" target="_blank" style="color:#00e5ff;">@BotFather</a> y pegar el token aquí.</p>
+      <label for="tg-token">TELEGRAM_BOT_TOKEN</label>
+      <input id="tg-token" type="text" placeholder="1234567890:ABCdef...">
+      <div style="text-align:center;margin:1.5rem 0;">
+        <div id="tg-qr"></div>
+        <p style="font-size:0.75rem;color:#666;">Escanea con Telegram para abrir el chat</p>
+      </div>
+      <button type="button" class="btn" onclick="nextStep()">Siguiente →</button>
+      <a class="skip" onclick="nextStep()" style="display:block;text-align:center;margin-top:0.5rem;color:#555;font-size:0.8rem;cursor:pointer;">Saltar este paso</a>
+    </div>
+
+    <!-- Step 5: Provider -->
+    <div class="step" data-step="4">
+      <h2>Proveedor IA</h2>
+      <p>Elige tu proveedor por defecto. Siempre puedes cambiarlo después con <code>switch_provider</code>.</p>
+      <div id="provider-options"></div>
+      <button type="button" class="btn" onclick="nextStep()">Siguiente →</button>
+    </div>
+
+    <!-- Step 6: Done -->
+    <div class="step" data-step="5">
+      <h2>¡Listo! <span class="check">✓</span></h2>
+      <p>Thoth está configurado. Vamos al chat.</p>
+      <button type="submit" class="btn">Ir al chat →</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  let currentStep = 0;
+  const totalSteps = 6;
+
+  function renderProgress() {
+    const p = document.getElementById('progress');
+    p.innerHTML = '';
+    for (let i = 0; i < totalSteps; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < currentStep ? ' done' : i === currentStep ? ' active' : '');
+      p.appendChild(d);
+    }
+  }
+
+  function showStep(n) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.querySelector(`.step[data-step="${n}"]`).classList.add('active');
+    currentStep = n;
+    renderProgress();
+  }
+
+  function nextStep() {
+    if (currentStep < totalSteps - 1) showStep(currentStep + 1);
+  }
+
+  async function testKey() {
+    const key = document.getElementById('api-key').value.trim();
+    const btn = document.getElementById('key-btn');
+    const err = document.getElementById('key-error');
+    if (!key) { err.textContent = 'Ingresa una API key'; return; }
+    btn.disabled = true;
+    btn.textContent = 'Probando...';
+    err.textContent = '';
+    try {
+      const r = await fetch('/api/setup/test-key', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key, provider: 'groq'}),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        err.textContent = '';
+        err.style.color = '#00e86e';
+        err.textContent = '✓ Key válida';
+        document.getElementById('api-key').dataset.valid = 'true';
+        setTimeout(() => nextStep(), 800);
+      } else {
+        err.textContent = d.error || 'Key inválida';
+        btn.disabled = false;
+        btn.textContent = 'Probar y continuar';
+      }
+    } catch {
+      err.textContent = 'Error de conexión';
+      btn.disabled = false;
+      btn.textContent = 'Probar y continuar';
+    }
+  }
+
+  async function loadProviders() {
+    const r = await fetch('/api/providers');
+    const data = await r.json();
+    const div = document.getElementById('provider-options');
+    div.innerHTML = data.providers.map((p,i) => `
+      <label style="display:flex;align-items:center;gap:0.5rem;margin:0.5rem 0;cursor:pointer;">
+        <input type="radio" name="provider" value="${p.name}" ${i===0?'checked':''} ${!p.has_key?'disabled':''}>
+        <div>
+          <strong>${p.name}</strong>
+          <div style="font-size:0.75rem;color:#888;">${p.description}</div>
+        </div>
+        <span style="margin-left:auto;font-size:0.75rem;color:${p.has_key?'#00e86e':'#555'};">${p.has_key?'✓ key':'✗ no key'}</span>
+      </label>
+    `).join('');
+  }
+
+  function skipSetup() {
+    fetch('/api/setup/skip', {method: 'POST'});
+    return true;
+  }
+
+  document.getElementById('setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('user-name').value.trim();
+    const key = document.getElementById('api-key').value.trim();
+    const tg = document.getElementById('tg-token').value.trim();
+    const providerEl = document.querySelector('input[name="provider"]:checked');
+    const provider = providerEl ? providerEl.value : 'groq';
+    await fetch('/api/setup/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, groq_key: key, telegram_token: tg, default_provider: provider}),
+    });
+    window.location.href = '/';
+  });
+
+  loadProviders();
+  renderProgress();
+</script>
+</body>
+</html>
