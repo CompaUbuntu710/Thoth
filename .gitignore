@@ -10,3 +10,8 @@ __pycache__/
 *.log
 voice/vosk-model-small-es-0.42/
 voice/piper_voices/
+memory/chroma_db/
+uploads/*.txt
+uploads/*.pdf
+uploads/*.docx
+uploads/*.xlsx
