@@ -71,6 +71,16 @@ Respond with ONLY the category name."""
 
 SUMMARIZE_PROMPT = """Resume la siguiente conversación en 2-3 oraciones, capturando los temas principales, información importante, y tareas pendientes. Solo el resumen, sin introducción."""
 
+CRITIC_PROMPT = """Revisa la siguiente respuesta del asistente Thoth. Verifica:
+1. ¿La respuesta es precisa y útil para la pregunta del usuario?
+2. ¿Podría mejorarse la claridad o el tono?
+3. ¿Hay errores fácticos o de formato?
+4. ¿Usó herramientas cuando era necesario?
+
+Si la respuesta está bien, responde SOLO con: OK
+Si hay mejoras, responde con la versión corregida/mejorada de la respuesta del asistente.
+No añadas explicaciones. No digas "versión mejorada". Solo responde OK o el texto corregido."""
+
 MAX_HISTORY = 50
 
 
@@ -91,6 +101,7 @@ class ThothEngine:
         self._plugin_tools = []
         self._plugin_schemas = []
         self._plugin_handlers = {}
+        self._critic_enabled = True
         try:
             from core.plugin import load_all
             load_all(self)
@@ -121,14 +132,14 @@ class ThothEngine:
                     f"API key no configurada para '{self.provider_name}'.\n"
                     f"Variables de entorno requeridas:\n{providers_info}"
                 )
-            self._client = OpenAI(base_url=self.provider["base_url"], api_key=key)
+            self._client = OpenAI(base_url=self.provider["base_url"], api_key=key, timeout=60.0)
         return self._client
 
     @property
     def extractor(self):
         if self._extractor is None:
             key = self._resolve_api_key()
-            self._extractor = OpenAI(base_url=self.provider["base_url"], api_key=key)
+            self._extractor = OpenAI(base_url=self.provider["base_url"], api_key=key, timeout=30.0)
         return self._extractor
 
     def _get_agent(self, name):
@@ -311,6 +322,30 @@ class ThothEngine:
         except Exception:
             pass
 
+    def _critique(self, msg, reply):
+        """Revisa la respuesta del agente y la mejora si es necesario."""
+        if not self._critic_enabled:
+            return reply
+        try:
+            r = self.extractor.chat.completions.create(
+                model=self.extract_model,
+                messages=[
+                    {"role": "system", "content": CRITIC_PROMPT},
+                    {"role": "user", "content": f"Usuario: {msg[:500]}\n\nAsistente: {reply[:1000]}"},
+                ],
+                temperature=0.2, max_tokens=512, timeout=15,
+            )
+            critique = r.choices[0].message.content.strip()
+            if critique and critique != "OK" and len(critique) > 10:
+                return critique
+        except Exception as e:
+            try:
+                from core.observability import log_error
+                log_error("critic", str(e)[:100])
+            except Exception:
+                pass
+        return reply
+
     def _run_tools(self, messages, tool_calls):
         results = []
         for tc in tool_calls:
@@ -412,6 +447,8 @@ class ThothEngine:
         messages = self._build_messages(session_id, agent)
 
         reply, updated_messages = agent.run(messages)
+
+        reply = self._critique(msg, reply)
 
         self.store.save_message(session_id, "assistant", reply)
         self._msg_count += 1
@@ -516,6 +553,7 @@ class ThothEngine:
 
                         if not reply_msg.tool_calls:
                             reply = reply_msg.content or ""
+                            reply = self._critique(msg, reply)
                             yield ("token", reply)
                             self.store.save_message(session_id, "assistant", reply)
                             self._msg_count += 1
@@ -529,6 +567,7 @@ class ThothEngine:
                     except Exception:
                         r2 = self._call(messages)
                         reply = r2.choices[0].message.content or ""
+                        reply = self._critique(msg, reply)
                         self.store.save_message(session_id, "assistant", reply)
                         self._msg_count += 1
                         if self._msg_count % 2 == 0:
@@ -542,6 +581,7 @@ class ThothEngine:
                 yield ("done", reply)
             else:
                 reply = collected["content"]
+                reply = self._critique(msg, reply)
                 self.store.save_message(session_id, "assistant", reply)
                 self._msg_count += 1
                 if self._msg_count % 2 == 0:
