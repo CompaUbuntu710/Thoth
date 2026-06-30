@@ -88,6 +88,14 @@ class ThothEngine:
         self._msg_count = 0
         self._agents = {}
         self.vector_store = VectorStore() if HAS_CHROMA else None
+        self._plugin_tools = []
+        self._plugin_schemas = []
+        self._plugin_handlers = {}
+        try:
+            from core.plugin import load_all
+            load_all(self)
+        except Exception:
+            pass
         os.environ.setdefault("API_BASE_URL", self.provider["base_url"])
         os.environ.setdefault("MODEL_NAME", self.model)
         os.environ.setdefault("VISION_MODEL", self.vision_model)
@@ -136,6 +144,8 @@ class ThothEngine:
                 tool_names=defn["tool_names"],
                 model=self.model,
                 client=self.client,
+                extra_schemas=self._plugin_schemas,
+                extra_handlers=self._plugin_handlers,
             )
         return self._agents[name]
 
@@ -205,6 +215,29 @@ class ThothEngine:
             "agents": list(AGENT_DEFS.keys()),
             "active_agent": getattr(self, "_last_agent", "thoth"),
         }
+
+    def _handle_plugin(self, action, name=None):
+        from core.plugin import list_plugins, load_plugin, unload_plugin, discover
+        if action == "list":
+            plugins = list_plugins()
+            if not plugins:
+                return "[No hay plugins cargados]"
+            return "Plugins:\n" + "\n".join(
+                f"  {p['name']} v{p['version']} — {p['description']}" for p in plugins
+            )
+        elif action == "load":
+            if not name:
+                return "[Error: nombre requerido]"
+            for cls in discover():
+                cls_name = cls.name or cls.__name__.lower()
+                if cls_name == name.lower():
+                    return load_plugin(cls, self)
+            return f"[Plugin '{name}' no encontrado en plugins/]"
+        elif action == "unload":
+            if not name:
+                return "[Error: nombre requerido]"
+            return unload_plugin(name, self)
+        return "[Error: acción inválida. Usa: list, load, unload]"
 
     def _build_messages(self, session_id, agent):
         facts = self.store.get_facts()
@@ -302,6 +335,18 @@ class ThothEngine:
                     f"Mensajes: {status['messages']}\n"
                     f"Agentes: {', '.join(status['agents'])}"
                 )
+            elif fn.name in self._plugin_handlers:
+                try:
+                    args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                    result = self._plugin_handlers[fn.name](**args)
+                except Exception as e:
+                    result = f"[Error ejecutando plugin {fn.name}: {e}]"
+            elif fn.name == "plugin":
+                try:
+                    args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                    result = self._handle_plugin(**args)
+                except Exception as e:
+                    result = f"[Error en plugin: {e}]"
             elif handler:
                 try:
                     args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments

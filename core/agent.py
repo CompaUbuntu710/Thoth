@@ -6,16 +6,21 @@ from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
 class Agent:
     """Un agente especializado con su propio rol, system prompt y herramientas."""
 
-    def __init__(self, name, role, system_prompt, tool_names, model, client):
+    def __init__(self, name, role, system_prompt, tool_names, model, client,
+                 extra_schemas=None, extra_handlers=None):
         self.name = name
         self.role = role
         self.system_prompt = system_prompt
-        self.tool_schemas = [
+        base_schemas = [
             s for s in TOOL_SCHEMAS
             if s["function"]["name"] in tool_names
         ]
+        if extra_schemas:
+            base_schemas.extend(extra_schemas)
+        self.tool_schemas = base_schemas
         self.model = model
         self.client = client
+        self._extra_handlers = extra_handlers or {}
 
     def run(self, messages, max_rounds=3):
         """Ejecuta el agente: llama al LLM con sus tools, encadena hasta max_rounds rondas.
@@ -75,7 +80,7 @@ class Agent:
         results = []
         for tc in tool_calls:
             fn = tc.function
-            handler = TOOL_HANDLERS.get(fn.name)
+            handler = TOOL_HANDLERS.get(fn.name) or self._extra_handlers.get(fn.name)
             if handler:
                 try:
                     args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
@@ -132,7 +137,7 @@ TUS 18 HERRAMIENTAS DISPONIBLES:
             "memory_search", "web_fetch", "clipboard",
             "query_documents", "list_documents",
             "reminder", "alarm", "calendar",
-            "browser_agent", "email",
+            "browser_agent", "email", "plugin",
             "switch_provider", "system_status",
         ],
     },

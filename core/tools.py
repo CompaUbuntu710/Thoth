@@ -384,6 +384,21 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "plugin",
+            "description": "Gestiona plugins: list (lista plugins cargados), load (nombre), unload (nombre). Los plugins añaden herramientas dinámicamente al sistema.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "load", "unload"]},
+                    "name": {"type": "string", "description": "Nombre del plugin para load o unload"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "browser_agent",
             "description": "Navega páginas web, hace clic, escribe texto, extrae contenido, toma screenshots o busca en Google. Acciones: navigate, click, type, extract, screenshot, search, current_url, back.",
             "parameters": {
@@ -786,6 +801,9 @@ def handle_email(action, to=None, subject="", body="", mailbox="INBOX", limit=5)
     except Exception as e:
         return f"[Error en email: {e}]"
 
+def handle_plugin(action, name=None):
+    return f"__PLUGIN__:{action}:{name or ''}"
+
 def handle_browser_agent(action, url=None, selector=None, text=None, query=None):
     try:
         from tools.browser_agent import handle_browser_agent as hb
@@ -818,5 +836,6 @@ TOOL_HANDLERS = {
     "alarm": handle_alarm,
     "calendar": handle_calendar,
     "email": handle_email,
+    "plugin": handle_plugin,
     "browser_agent": handle_browser_agent,
 }

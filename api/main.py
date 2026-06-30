@@ -254,6 +254,25 @@ async def profile(username: str = Depends(get_current_user)):
 
 from memory.document_processor import document_store, UPLOAD_DIR, ensure_upload_dir
 
+@app.get("/api/plugins")
+def list_plugins_api():
+    from core.plugin import list_plugins
+    return {"plugins": list_plugins()}
+
+@app.post("/api/plugins/load")
+def load_plugin_api(name: str):
+    from core.plugin import discover, load_plugin
+    for cls in discover():
+        cls_name = cls.name or cls.__name__.lower()
+        if cls_name == name.lower():
+            return {"result": load_plugin(cls, engine)}
+    return {"result": f"[Plugin '{name}' no encontrado]"}
+
+@app.post("/api/plugins/unload")
+def unload_plugin_api(name: str):
+    from core.plugin import unload_plugin
+    return {"result": unload_plugin(name, engine)}
+
 @app.get("/api/observability")
 def observability(hours: int = 24):
     from core.observability import get_usage_summary, get_error_log, get_usage_chart
