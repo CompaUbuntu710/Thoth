@@ -43,6 +43,10 @@ PROVIDERS = {
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "groq").lower()
 PROVIDER = PROVIDERS.get(DEFAULT_PROVIDER, PROVIDERS["groq"])
 
+# Start reminder checker
+from tools.calendar_tool import start_reminder_checker
+start_reminder_checker()
+
 EXTRACT_PROMPT = """De la conversación anterior, extrae datos personales, preferencias, gustos, proyectos o información importante sobre el usuario.
 Devuelve SOLO un JSON array. Cada elemento: {"fact": "texto del hecho", "category": "preferencia|dato_personal|proyecto|gusto|tarea|otro"}
 Ejemplo: [{"fact": "Al usuario le gusta el cafe negro", "category": "gusto"}]

@@ -131,6 +131,7 @@ TUS 18 HERRAMIENTAS DISPONIBLES:
             "notify", "screenshot", "image_analysis", "browser_open",
             "memory_search", "web_fetch", "clipboard",
             "query_documents", "list_documents",
+            "reminder", "alarm", "calendar",
             "switch_provider", "system_status",
         ],
     },

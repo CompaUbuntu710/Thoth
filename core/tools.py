@@ -311,6 +311,57 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "reminder",
+            "description": "Crea, lista, completa o elimina recordatorios. Acciones: create (texto + fecha), list, done, delete.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "create | list | done | delete"},
+                    "text": {"type": "string", "description": "Texto del recordatorio (requerido para create)"},
+                    "due_at": {"type": "string", "description": "Fecha ISO para el recordatorio, ej: 2026-07-01T09:00:00 (requerido para create)"},
+                    "reminder_id": {"type": "integer", "description": "ID del recordatorio (requerido para done/delete)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "alarm",
+            "description": "Crea una alarma absoluta. Similar a reminder pero solo crea. Útil para 'despiértame a las 7am' o 'alarma en 30 minutos'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Texto de la alarma"},
+                    "due_at": {"type": "string", "description": "Fecha ISO, ej: 2026-07-01T07:00:00"},
+                },
+                "required": ["text", "due_at"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calendar",
+            "description": "Gestiona eventos de calendario. Acciones: create (título + fecha inicio), list, delete. No integrado con Google Calendar aún.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "create | list | delete"},
+                    "title": {"type": "string", "description": "Título del evento (requerido para create)"},
+                    "description": {"type": "string", "description": "Descripción opcional"},
+                    "start_at": {"type": "string", "description": "Fecha ISO de inicio"},
+                    "end_at": {"type": "string", "description": "Fecha ISO de fin (opcional)"},
+                    "event_id": {"type": "integer", "description": "ID del evento (requerido para delete)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 
@@ -670,6 +721,27 @@ def handle_list_documents():
     except Exception as e:
         return f"[Error listando documentos: {e}]"
 
+def handle_reminder(action, text=None, due_at=None, reminder_id=None):
+    try:
+        from tools.calendar_tool import handle_reminder as hr
+        return hr(action, text=text, due_at=due_at, reminder_id=reminder_id)
+    except Exception as e:
+        return f"[Error en recordatorio: {e}]"
+
+def handle_alarm(text, due_at):
+    try:
+        from tools.calendar_tool import handle_alarm as ha
+        return ha(text, due_at)
+    except Exception as e:
+        return f"[Error en alarma: {e}]"
+
+def handle_calendar(action, title=None, description="", start_at=None, end_at=None, event_id=None):
+    try:
+        from tools.calendar_tool import handle_calendar as hc
+        return hc(action, title=title, description=description, start_at=start_at, end_at=end_at, event_id=event_id)
+    except Exception as e:
+        return f"[Error en calendario: {e}]"
+
 TOOL_HANDLERS = {
     "run_command": handle_run_command,
     "web_search": handle_web_search,
@@ -691,4 +763,7 @@ TOOL_HANDLERS = {
     "system_status": handle_system_status,
     "query_documents": handle_query_documents,
     "list_documents": handle_list_documents,
+    "reminder": handle_reminder,
+    "alarm": handle_alarm,
+    "calendar": handle_calendar,
 }

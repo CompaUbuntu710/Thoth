@@ -606,6 +606,9 @@ function addMessage(role, text) {
   div.textContent = text;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
+  if (role === 'assistant' && localStorage.getItem('thoth_tts') === 'on') {
+    speakText(text);
+  }
 }
 
 function showTyping() {
@@ -858,6 +861,84 @@ function connectWS() {
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
 }
+
+// ─── Voice ───
+const micBtn = document.getElementById('mic-btn');
+let isRecording = false;
+let recognition = null;
+
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { micBtn.style.display = 'none'; return; }
+  recognition = new SR();
+  recognition.lang = 'es-MX';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    chatInput.value = text;
+    micBtn.style.color = '#666';
+    isRecording = false;
+    sendMessage();
+  };
+  recognition.onerror = () => {
+    micBtn.style.color = '#ff5555';
+    setTimeout(() => micBtn.style.color = '#666', 2000);
+    isRecording = false;
+  };
+  recognition.onend = () => {
+    micBtn.style.color = '#666';
+    isRecording = false;
+  };
+}
+
+micBtn.addEventListener('click', () => {
+  if (!recognition) initSpeechRecognition();
+  if (!recognition) return;
+  if (isRecording) {
+    recognition.stop();
+    micBtn.style.color = '#666';
+    isRecording = false;
+    return;
+  }
+  try {
+    recognition.start();
+    micBtn.style.color = '#00ff64';
+    isRecording = true;
+  } catch { micBtn.style.color = '#ff5555'; }
+});
+
+function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = 'es-MX';
+  utt.rate = 1.1;
+  utt.pitch = 0.9;
+  window.speechSynthesis.speak(utt);
+}
+
+function toggleTTS() {
+  const current = localStorage.getItem('thoth_tts');
+  const label = document.getElementById('tts-label');
+  if (current === 'on') {
+    localStorage.setItem('thoth_tts', 'off');
+    window.speechSynthesis.cancel();
+    if (label) { label.style.color = '#555'; label.innerHTML = '&#128264; TTS'; }
+  } else {
+    localStorage.setItem('thoth_tts', 'on');
+    if (label) { label.style.color = 'var(--cyan)'; label.innerHTML = '&#128264; TTS ON'; }
+  }
+}
+
+// Restore TTS toggle state on load
+document.addEventListener('DOMContentLoaded', () => {
+  const label = document.getElementById('tts-label');
+  if (label && localStorage.getItem('thoth_tts') === 'on') {
+    label.style.color = 'var(--cyan)';
+    label.innerHTML = '&#128264; TTS ON';
+  }
+});
 
 // ─── History ───
 async function loadHistory() {
