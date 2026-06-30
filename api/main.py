@@ -4,7 +4,11 @@ import json
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, JSONResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import time
+import asyncio
+import collections
 from api.auth import get_current_user
 from core.engine import ThothEngine, PROVIDERS
 from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
@@ -17,6 +21,42 @@ from api.telegram_bot import start_bot, init_engine
 UI_DIR = os.path.join(os.path.dirname(__file__), "..", "ui")
 
 app = FastAPI()
+
+# ─── Rate limiting ───
+RATE_LIMIT = int(os.getenv("RATE_LIMIT", "30"))
+_rate_buckets = collections.defaultdict(list)
+
+@app.middleware("http")
+async def rate_limit_and_log(request: Request, call_next):
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window = 60
+    _rate_buckets[ip] = [t for t in _rate_buckets[ip] if t > now - window]
+    if len(_rate_buckets[ip]) >= RATE_LIMIT:
+        return JSONResponse(
+            status_code=429,
+            content={"error": f"Rate limit: {RATE_LIMIT} req/min. Espera un momento."}
+        )
+    _rate_buckets[ip].append(now)
+
+    start = time.time()
+    response = await call_next(request)
+    elapsed = time.time() - start
+
+    log_line = f"[{time.strftime('%H:%M:%S')}] {request.method} {request.url.path} {response.status_code} {elapsed*1000:.0f}ms {ip}"
+    print(log_line)
+    try:
+        from core.observability import _get_log_conn
+        conn = _get_log_conn()
+        conn.execute(
+            "INSERT INTO request_log (method, path, status, elapsed_ms, ip) VALUES (?, ?, ?, ?, ?)",
+            (request.method, request.url.path, response.status_code, int(elapsed*1000), ip),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+    return response
 store = MemoryStore()
 engine = ThothEngine(store=store)
 SERVER_START = time.time()

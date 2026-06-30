@@ -42,8 +42,23 @@ def _get_conn():
             traceback TEXT DEFAULT ''
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS request_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+            method TEXT NOT NULL,
+            path TEXT NOT NULL,
+            status INTEGER NOT NULL,
+            elapsed_ms INTEGER DEFAULT 0,
+            ip TEXT DEFAULT ''
+        )
+    """)
     conn.commit()
     return conn
+
+
+def _get_log_conn():
+    return _get_conn()
 
 
 def log_usage(provider, model, agent, prompt_tokens, completion_tokens, cost=None, error="", session_id=""):
