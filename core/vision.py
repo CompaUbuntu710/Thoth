@@ -10,6 +10,7 @@ except ImportError:
 
 
 def capture_camera():
+    """Captura una foto desde la cámara. Retorna ruta o None."""
     path = os.path.join(tempfile.gettempdir(), "thoth_capture.jpg")
     try:
         subprocess.run(
@@ -31,6 +32,7 @@ def capture_camera():
 
 
 def describe_image(image_path):
+    """Retorna metadatos básicos de una imagen."""
     if not HAS_PIL:
         return "[Visión no disponible: instala Pillow]"
     try:

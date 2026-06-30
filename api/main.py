@@ -1,9 +1,10 @@
 import os
 import time
+import json
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from core.engine import ThothEngine
 from memory.store import MemoryStore
 from pydantic import BaseModel
@@ -31,7 +32,9 @@ class ForgetRequest(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(UI_DIR, "index.html"))
+    path = os.path.join(UI_DIR, "index.html")
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 @app.get("/api/health")
 def health():
@@ -92,6 +95,11 @@ def list_sessions():
     )
     return {"sessions": [{"id": r[0], "created_at": r[1]} for r in cur.fetchall()]}
 
+@app.get("/api/history/{session_id}")
+def get_history(session_id: str = "default"):
+    msgs = store.get_history(session_id, limit=50)
+    return {"messages": msgs}
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     global MSG_COUNT
@@ -107,6 +115,39 @@ async def chat(req: ChatRequest):
         "messages": MSG_COUNT,
     })
     return {"reply": reply}
+
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest):
+    async def event_stream():
+        global MSG_COUNT
+        yield f"event: start\ndata: {{\"session\": \"{req.session_id}\"}}\n\n"
+        loop = asyncio.get_event_loop()
+        async for event, data in _async_yield_from(loop, engine.chat_stream(req.message, req.session_id)):
+            if event == "token":
+                payload = json.dumps({"token": data})
+                yield f"event: token\ndata: {payload}\n\n"
+            elif event == "tool_calls_start":
+                payload = json.dumps({"interim": data})
+                yield f"event: tool_calls_start\ndata: {payload}\n\n"
+            elif event == "error":
+                payload = json.dumps({"error": data})
+                yield f"event: error\ndata: {payload}\n\n"
+            elif event == "done":
+                MSG_COUNT += 1
+                payload = json.dumps({"reply": data})
+                yield f"event: done\ndata: {payload}\n\n"
+                await ws_manager.broadcast("stats_update", {
+                    "memories": len(store.get_facts()),
+                    "messages": MSG_COUNT,
+                })
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+async def _async_yield_from(loop, sync_gen):
+    """Convierte un generador síncrono en async iterator."""
+    for item in sync_gen:
+        yield item
+        await asyncio.sleep(0)
 
 @app.get("/memories")
 def memories():

@@ -1,0 +1,16 @@
+services:
+  thoth:
+    build: .
+    container_name: thoth
+    ports:
+      - "8000:8000"
+    volumes:
+      - thoth_data:/thoth/memory
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+volumes:
+  thoth_data:

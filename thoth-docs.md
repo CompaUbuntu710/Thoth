@@ -1,82 +1,68 @@
 # 𓁞 Thoth — Documentación completa
 
-> Asistente IA autónomo. Inspirado en JARVIS. Construido en público por **@CompaUbuntu710**.
-
----
-
-## Índice
-
-1. [Arquitectura](#1-arquitectura)
-2. [Stack tecnológico](#2-stack-tecnológico)
-3. [Estructura del proyecto](#3-estructura-del-proyecto)
-4. [Instalación](#4-instalación)
-5. [Uso](#5-uso)
-6. [Módulo de voz](#6-módulo-de-voz)
-7. [Módulo de memoria](#7-módulo-de-memoria)
-8. [Lectura de documentos](#8-lectura-de-documentos)
-9. [Visión](#9-visión)
-10. [API endpoints](#10-api-endpoints)
-11. [Roadmap](#11-roadmap)
-12. [Comandos rápidos](#12-comandos-rápidos)
+> Asistente IA autónomo multi-agente. Inspirado en JARVIS. Construido en público por **@CompaUbuntu710**.
 
 ---
 
 ## 1. Arquitectura
 
 ```
-┌──────────┐     ┌──────────────┐     ┌─────────────┐
-│ Terminal │────▶│  FastAPI      │────▶│  Groq API    │
-│ chat.py  │     │  api/main.py  │     │  Llama 3.3   │
-└──────────┘     └──────┬───────┘     └─────────────┘
-                        │
-              ┌─────────┴─────────┐
-              ▼                   ▼
-        ┌──────────┐       ┌──────────┐
-        │ SQLite   │       │  Vosk    │
-        │ Memoria  │       │  STT     │
-        └──────────┘       └──────────┘
-                                │
-                                ▼
-                          ┌──────────┐
-                          │ espeak   │
-                          │ TTS      │
-                          └──────────┘
+┌──────────────────────────────────────────────────┐
+│                   CLIENTES                        │
+│  Web UI │ Telegram │ Terminal │ API               │
+└──────────────────────┬───────────────────────────┘
+                       │ WS / HTTP / SSE
+┌──────────────────────▼───────────────────────────┐
+│              FASTAPI SERVER                        │
+│  api/main.py │ api/ws_manager.py │ api/telegram   │
+└──────────────────────┬───────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────┐
+│              THOTH ENGINE                          │
+│  core/engine.py                                    │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐              │
+│  │ LLM     │ │ Tools   │ │ Memory  │              │
+│  │ Router  │ │ (18)    │ │ Store   │              │
+│  └─────────┘ └─────────┘ └─────────┘              │
+└──────────────────────┬───────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────┐
+│              PROVIDERS                             │
+│  Groq │ OpenRouter │ NVIDIA │ Together             │
+│  (switchable in hot)                               │
+└───────────────────────────────────────────────────┘
 ```
 
 ### Flujo de datos
 
-1. El usuario envía un mensaje (texto o voz)
-2. Si es voz → `voice/stt.py` lo transcribe con Vosk (local)
-3. `chat.py` envía el texto a `api/main.py` (FastAPI)
-4. `api/main.py` llama a `core/engine.py` (ThothEngine)
-5. ThothEngine envía el mensaje a Groq API + historial
-6. Groq responde → se guarda en SQLite → se devuelve al chat
-7. Si TTS activo → `voice/tts.py` habla la respuesta con espeak-ng
+1. Usuario envía mensaje por web UI, Telegram o terminal
+2. ThothEngine construye mensajes con system prompt + historia + memoria
+3. LLM responde con texto o decide usar una herramienta (tool calling)
+4. Si usa herramientas: ejecuta → realimenta → hasta 3 rondas de encadenamiento
+5. Cada 2 mensajes: extracción automática de hechos → memoria persistente
+6. Respuesta final se guarda en SQLite y se devuelve al cliente
+7. Streaming SSE: el frontend recibe tokens en tiempo real
 
 ---
 
 ## 2. Stack tecnológico
 
-| Capa | Tecnología | Versión |
-|---|---|---|
-| Lenguaje | Python | 3.14 |
-| LLM | Groq (llama-3.3-70b-versatile) | — |
-| Servidor | FastAPI + Uvicorn | >=0.100 |
-| Cliente OpenAI | openai (Groq-compatible) | >=1.0 |
-| STT (voz → texto) | Vosk + vosk-model-small-es-0.42 | 0.3.45 |
-| TTS (texto → voz) | pyttsx3 + espeak-ng | 2.99 |
-| Memoria | SQLite (WAL mode) | — |
-| Documentos | PyMuPDF (PDF), JSON, CSV | >=1.23 |
-| Imágenes | Pillow | >=10.0 |
-| Dependencias | python-dotenv, requests, pydantic | — |
-
-### Hardware actual
-
-- **Laptop:** HP Laptop 14-dq6xxx
-- **CPU:** Intel N150 (4 núcleos)
-- **RAM:** 3.2 GB
-- **Micrófono:** Integrado (DMIC)
-- **SO:** Ubuntu (Resolute)
+| Capa | Tecnología |
+|---|---|
+| Lenguaje | Python 3.14 |
+| Backend | FastAPI + Uvicorn |
+| LLMs | Groq / OpenRouter / NVIDIA / Together (hot-swappable) |
+| Streaming | SSE (Server-Sent Events) |
+| Tiempo real | WebSocket |
+| Cliente OpenAI | openai >=1.0 |
+| STT (voz → texto) | Vosk + modelo español (local) |
+| TTS (texto → voz) | Piper TTS + espeak-ng fallback |
+| Wake word | Vosk + RMS energy detection |
+| Memoria | SQLite (WAL mode, thread-safe) |
+| Documentos | PyMuPDF (PDF), JSON, CSV, MD |
+| Imágenes | Pillow + LLM visión |
+| UI Web | Three.js + CSS vanilla |
+| Contenedor | Docker + docker-compose |
 
 ---
 
@@ -85,49 +71,58 @@
 ```
 ~/Thoth/
 ├── api/
-│   ├── __init__.py
-│   └── main.py              # FastAPI server (2 endpoints)
+│   ├── main.py              # FastAPI server (15+ endpoints)
+│   ├── telegram_bot.py      # Bot de Telegram
+│   └── ws_manager.py         # WebSocket connection manager
 │
 ├── core/
-│   ├── __init__.py
-│   ├── engine.py             # ThothEngine → Groq API
+│   ├── engine.py             # ThothEngine (multi-provider, tool chaining)
+│   ├── tools.py              # 18 herramientas (function calling)
 │   ├── readers.py            # PDF / JSON / CSV / MD
-│   └── vision.py             # Captura + descripción de imágenes
+│   └── vision.py             # Captura de cámara + metadatos
 │
 ├── memory/
-│   ├── __init__.py
-│   └── store.py              # SQLite persistente (sesiones + docs)
+│   └── store.py              # SQLite persistente (thread-safe)
 │
 ├── voice/
-│   ├── __init__.py            # Exporta listen(), speak()
-│   ├── stt.py                 # Speech-to-text con Vosk
-│   ├── tts.py                 # Text-to-speech con espeak-ng
-│   └── download_model.sh      # Descarga el modelo Vosk español
+│   ├── stt.py                # Speech-to-text con Vosk
+│   ├── tts.py                # Text-to-speech (Piper + espeak)
+│   └── wake.py               # Wake word detection
 │
-├── scripts/                   # (vacío — para futuros scripts)
-├── ui/                        # (vacío — para futura interfaz web)
+├── ui/
+│   ├── index.html            # Single-page app
+│   ├── style.css             # Tema sci-fi / glassmorphism
+│   ├── app.js                # 3D scene + chat + HUD + WebSocket
+│   └── js/
+│       ├── map-view.js       # Mapa mental (canvas)
+│       └── music-player.js   # Sintetizador ambiental (Web Audio)
 │
-├── chat.py                    # Cliente de terminal con voz integrada
-├── thoth.sh                   # Script todo-en-uno (server + chat)
-├── run.sh                     # Solo arranca el servidor
-├── requirements.txt           # Dependencias pip
-├── README.md                  # Documentación principal
-├── thoth-docs.md              # Esta documentación
-├── .env                       # GROQ_API_KEY (no se sube a git)
-└── .gitignore                 # venv, pycache, .env, .db
+├── scripts/                  # Scripts auxiliares
+├── Dockerfile                # Contenedor producción
+├── docker-compose.yml        # Orquestación
+├── chat.py                   # Cliente de terminal
+├── requirements.txt          # Dependencias pip
+├── README.md                 # Documentación principal
+└── .env                      # API keys (no se sube a git)
 ```
 
 ---
 
 ## 4. Instalación
 
-### Requisitos del sistema
+### Docker (recomendado — 3 clics)
 
 ```bash
-sudo apt install -y espeak-ng portaudio19-dev python3-pyaudio
+git clone https://github.com/CompaUbuntu710/Thoth.git
+cd Thoth
+# 1. Configura .env con tu API key de Groq
+echo "GROQ_API_KEY=gsk_tu_key_aqui" >> .env
+# 2. Un comando
+docker compose up -d
+# 3. Abre http://localhost:8000
 ```
 
-### Clonar e instalar
+### Manual
 
 ```bash
 git clone https://github.com/CompaUbuntu710/Thoth.git
@@ -135,256 +130,125 @@ cd Thoth
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### API key
-
-```bash
-# Ve a https://console.groq.com/keys y genera una key
 echo "GROQ_API_KEY=gsk_tu_key_aqui" > .env
-```
-
-### Modelo de voz (STT)
-
-```bash
-# Opción 1: con el script
-bash voice/download_model.sh
-
-# Opción 2: manual
-cd voice
-wget https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip
-unzip vosk-model-small-es-0.42.zip
-rm vosk-model-small-es-0.42.zip
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
 ---
 
-## 5. Uso
+## 5. API Endpoints
 
-### Una terminal (recomendado)
-
-```bash
-cd ~/Thoth && source venv/bin/activate
-
-# Solo texto
-./thoth.sh
-
-# Con voz (Thoth habla las respuestas)
-./thoth.sh --tts
-```
-
-### Dos terminales (debug)
-
-```bash
-# Terminal 1: servidor
-cd ~/Thoth && source venv/bin/activate
-python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# Terminal 2: chat
-source venv/bin/activate
-python3 chat.py            # texto
-python3 chat.py --tts      # con voz
-```
-
-### Comandos dentro del chat
-
-| Acción | Qué hacer |
-|---|---|
-| Escribir normal | Envía mensaje de texto a Thoth |
-| Enter vacío | Activa el micrófono (5s de grabación) |
-| `:tts` | Activa / desactiva la voz de Thoth |
-| `salir` / `exit` / `quit` | Cierra el chat |
-
----
-
-## 6. Módulo de voz
-
-### STT — Speech-to-Text (`voice/stt.py`)
-
-| Función | Descripción |
-|---|---|
-| `record_audio(duration, samplerate)` | Graba con `arecord` y guarda WAV temporal |
-| `transcribe(path, duration)` | Pasa el audio por Vosk y devuelve texto |
-| `listen(duration)` | Graba + transcribe + muestra resultado |
-
-**Modelo:** `vosk-model-small-es-0.42` (~40MB, español)
-**Latencia:** ~1-2s (en Intel N150)
-
-### TTS — Text-to-Speech (`voice/tts.py`)
-
-| Función | Descripción |
-|---|---|
-| `speak(text)` | Habla el texto con espeak-ng |
-| `say_thoth(reply)` | Ídem (alias) |
-
-**Voz:** espeak-ng, selecciona español automáticamente
-**Velocidad:** 160 palabras/minuto
-**Volumen:** 0.9
-
----
-
-## 7. Módulo de memoria
-
-### `memory/store.py` — SQLite
-
-| Tabla | Columnas | Propósito |
+| Ruta | Método | Descripción |
 |---|---|---|
-| `sessions` | id, created_at, updated_at | Sesiones de chat |
-| `messages` | id, session_id, role, content, timestamp | Historial de mensajes |
-| `facts` | id, fact (UNIQUE), category, source_session, created_at, updated_at | Memoria de largo plazo |
-| `documents` | id, name, type, content, path, created_at | Documentos procesados |
+| `/` | GET | Web UI |
+| `/api/health` | GET | Health check |
+| `/api/sysinfo` | GET | Uptime, memorias, sesiones |
+| `/api/stats` | GET | Stats detallados + provider |
+| `/api/sessions` | GET | Lista de sesiones |
+| `/api/history/{id}` | GET | Historial de mensajes de una sesión |
+| `/chat` | POST | Chat (respuesta completa) |
+| `/chat/stream` | POST | Chat con streaming SSE |
+| `/memories` | GET | Lista de recuerdos |
+| `/forget` | POST | Olvidar un hecho |
+| `/remember` | POST | Recordar un hecho |
+| `/news` | GET | Últimas noticias |
+| `/ws` | WebSocket | Conexión tiempo real |
+| `/static/*` | GET | Archivos estáticos |
 
-### Funciones principales
+---
 
-```python
-store = MemoryStore()
-store.save_message("default", "user", "Hola Thoth")
-store.save_message("default", "assistant", "¡Hola!")
-history = store.get_history("default", limit=50)
-store.save_fact("Al usuario le gusta el cafe", "gusto")
-facts = store.get_facts()         # Todos
-facts = store.get_facts("cafe")   # Búsqueda
-store.delete_fact("Al usuario le gusta el cafe")
-store.save_document("notas.pdf", "pdf", content=texto)
-```
+## 6. Proveedores disponibles
 
-### Memoria persistente de largo plazo
+| Proveedor | Chat | Extracción | Visión |
+|---|---|---|---|
+| **Groq** | llama-3.3-70b-versatile | llama-3.1-8b-instant | llama-3.2-11b-vision |
+| **OpenRouter** | gpt-4o | gpt-4o-mini | gpt-4o |
+| **NVIDIA** | llama-3.1-70b-instruct | llama-3.1-8b-instruct | llama-3.2-90b-vision |
+| **Together** | Mixtral-8x22B | Mistral-7B | Llama-3.2-11B-Vision |
 
-Thoth extrae automáticamente hechos cada 2 mensajes usando `llama-3.1-8b-instant`.
-Los hechos se inyectan en el system prompt de cada conversación.
+Cambio en caliente: `switch_provider("openrouter")` desde el chat.
 
-**Comandos del chat:**
+---
 
-| Comando | Qué hace |
+## 7. Herramientas (18)
+
+| Herramienta | Descripción |
 |---|---|
-| `:recuerda X` | Guarda el hecho X explícitamente |
-| `:olvida X` | Borra el hecho X |
-| `:recuerdos` | Lista todo lo que Thoth recuerda |
-
-**Archivo DB:** `memory/thoth.db` (gitignored)
-
----
-
-## 8. Lectura de documentos
-
-### `core/readers.py`
-
-| Función | Formatos |
-|---|---|
-| `read_pdf(path)` | PDF (con PyMuPDF) |
-| `read_json(path)` | JSON |
-| `read_csv(path)` | CSV (formateado como tabla) |
-| `read_md(path)` | Markdown y TXT |
-| `read_file(path)` | Detecta extensión automáticamente |
-
----
-
-## 9. Visión
-
-### `core/vision.py`
-
-| Función | Descripción |
-|---|---|
-| `capture_camera()` | Captura foto con libcamera-still o fswebcam |
-| `describe_image(path)` | Carga imagen con Pillow y devuelve metadatos |
-
-> **Estado:** Básico. Sin LLM multimodal aún. Requiere Pillow + cámara.
+| `run_command` | Ejecuta comandos bash |
+| `web_search` | Busca en internet (DuckDuckGo) |
+| `read_file` | Lee archivos |
+| `write_file` | Escribe archivos |
+| `list_files` | Lista directorios |
+| `get_weather` | Clima por wttr.in |
+| `calculate` | Cálculos matemáticos |
+| `python_repl` | Ejecuta Python (persistente) |
+| `system_info` | CPU, RAM, disco, procesos |
+| `notify` | Notificaciones de escritorio |
+| `screenshot` | Captura de pantalla |
+| `image_analysis` | Analiza imágenes con IA |
+| `browser_open` | Abre URLs |
+| `memory_search` | Busca en memoria persistente |
+| `web_fetch` | Extrae contenido web |
+| `clipboard` | Lee/escribe portapapeles |
+| `switch_provider` | Cambia proveedor de IA |
+| `system_status` | Muestra configuración actual |
 
 ---
 
-## 10. API endpoints
-
-### `GET /`
-
-```json
-{"status": "awakening", "message": "Día 1: Thoth despierta"}
-```
-
-### `POST /chat`
-
-**Request:**
-```json
-{"message": "¿Quién eres?"}
-```
-
-**Response:**
-```json
-{"reply": "Soy Thoth, el asistente de @CompaUbuntu710..."}
-```
-
-**Desde terminal:**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "¿Quién eres?"}'
-```
-
----
-
-## 11. Roadmap
+## 8. Roadmap
 
 ### Completado ✅
 
-- [x] Backend funcional con Groq (Llama 3.3 70B)
-- [x] Chat por terminal
-- [x] README y documentación
-- [x] Memoria SQLite persistente (historial por sesión)
-- [x] Memoria de largo plazo (hechos extraídos automáticamente)
-- [x] Voz local (Vosk STT + espeak-ng TTS)
-- [x] Chat con voz integrada (Enter para hablar)
-- [x] Script todo-en-uno (server + chat en 1 terminal)
-- [x] Lectura de documentos (PDF, JSON, CSV, MD)
-- [x] Captura de cámara (básico)
-- [x] Limpieza de secretos del historial git
-- [x] Repositorio público en GitHub
+- [x] Backend multi-provider (Groq, OpenRouter, NVIDIA, Together)
+- [x] 18 herramientas con function calling
+- [x] Encadenamiento multi-turno (hasta 3 rondas)
+- [x] Memoria SQLite persistente (thread-safe)
+- [x] Extracción automática de hechos
+- [x] Web UI con Three.js 3D, chat, HUD, mapa mental, música
+- [x] Streaming SSE en tiempo real
+- [x] Historial de chat persistente en UI
+- [x] WebSocket para actualizaciones en vivo
+- [x] Bot de Telegram (código listo, requiere token)
+- [x] Voz local (Vosk STT + Piper TTS + wake word)
+- [x] Visión por IA multi-proveedor
+- [x] Docker + docker-compose (3-clicks deploy)
+- [x] Proveedores intercambiables en caliente
+- [x] Documentación y README
 
 ### Pendiente
 
-- [ ] Tool use / function calling (ejecutar comandos, web search, etc.)
-- [ ] Despertar por voz (hotword "Hey Thoth")
-- [ ] Ollama local (modelo open-source sin depender de Groq)
-- [ ] Visión por cámara con LLaVA / MiniCPM-V
-- [ ] Interfaz web (dashboard tipo JARVIS)
-- [ ] Plugins (clima, calendario, noticias, etc.)
-- [ ] Voz de mayor calidad (Piper TTS)
-- [ ] Recordatorios y alarmas
-- [ ] Integración con el sistema de archivos
+- [ ] Multi-agente (coordinador + especialistas + crítico)
+- [ ] Memoria semántica (ChromaDB embeddings)
+- [ ] RAG sobre documentos (subida + chunking + query)
+- [ ] Plugins SDK
+- [ ] Auto-mejora (feedback loop)
+- [ ] Calendario / recordatorios / alarmas
+- [ ] Email / notificaciones push
+- [ ] Ollama local (modelos offline)
+- [ ] Autenticación multi-usuario
+- [ ] Stripe billing
+- [ ] Dashboard de configuración
 
 ---
 
-## 12. Comandos rápidos
+## 9. Comandos rápidos
 
 ```bash
-# Arrancar Thoth completo
-./thoth.sh
+# Arrancar con Docker
+docker compose up -d
 
-# Arrancar con voz
-./thoth.sh --tts
+# Arrancar manual
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 
-# Solo servidor (debug)
-python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# Solo chat
+# Chat por terminal
 python3 chat.py
 
 # Chat con voz
 python3 chat.py --tts
 
-# Probar voz (STT + TTS)
-python3 -c "from voice import listen, speak; speak('Listo'); print(listen(5))"
-
-# Ver el historial de git
-git log --oneline
-
 # Pushear cambios
 git add -A && git commit -m "mensaje" && git push
 
-# Ver el repo en GitHub
+# Ver el repo
 xdg-open https://github.com/CompaUbuntu710/Thoth
 ```
-
----
-
-> **Thoth** — *"El conocimiento no es poder. El poder es aplicar el conocimiento."*
->
-> Construido en público por [@CompaUbuntu710](https://github.com/CompaUbuntu710)

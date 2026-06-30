@@ -52,7 +52,7 @@ Personalidad:
 Estilo de respuesta: conciso (< 3 párrafos), con carácter pero servicial. Código limpio si te piden. Sin rodeos.
 
 TIENES ACCESO A HERRAMIENTAS (funciones). Cuando el usuario pida algo que requiera una herramienta, úsala sin preguntar. No inventes respuestas que puedas verificar con una herramienta. Puedes ENCADENAR herramientas: usa el resultado de una como entrada de la siguiente.
-TUS 16 HERRAMIENTAS DISPONIBLES:
+TUS 18 HERRAMIENTAS DISPONIBLES:
 - run_command: ejecuta comandos bash
 - web_search: busca en internet
 - read_file / write_file / list_files: manejo de archivos
@@ -275,6 +275,132 @@ class ThothEngine:
         if self._msg_count % 2 == 0:
             self._extract_facts(session_id)
         return reply
+
+    def chat_stream(self, msg, session_id="default"):
+        """Like chat() but yields (event, data) tuples for SSE streaming.
+        Events: 'token' (partial content), 'tool_call' (tool name + args),
+                'done' (final reply), 'error' (error message).
+        """
+        self.store.save_message(session_id, "user", msg)
+        messages = self._build_messages(session_id)
+
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model, messages=messages,
+                temperature=0.7, max_tokens=1024,
+                tools=TOOL_SCHEMAS, tool_choice="auto",
+                stream=True,
+            )
+
+            collected = {"content": "", "tool_calls": {}}
+
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+
+                if delta.content:
+                    collected["content"] += delta.content
+                    yield ("token", delta.content)
+
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in collected["tool_calls"]:
+                            collected["tool_calls"][idx] = {
+                                "id": tc.id or "",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                        if tc.id:
+                            collected["tool_calls"][idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                collected["tool_calls"][idx]["function"]["name"] += tc.function.name
+                            if tc.function.arguments:
+                                collected["tool_calls"][idx]["function"]["arguments"] += tc.function.arguments
+
+            if collected["tool_calls"]:
+                yield ("tool_calls_start", collected["content"])
+
+                tc_list = []
+                for idx in sorted(collected["tool_calls"].keys()):
+                    tc_data = collected["tool_calls"][idx]
+                    tc_list.append({
+                        "id": tc_data["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc_data["function"]["name"],
+                            "arguments": tc_data["function"]["arguments"],
+                        }
+                    })
+
+                from collections import namedtuple
+                ToolCall = namedtuple("ToolCall", ["id", "function"])
+                Function = namedtuple("Function", ["name", "arguments"])
+                tool_calls = []
+                for tc in tc_list:
+                    tool_calls.append(ToolCall(
+                        id=tc["id"],
+                        function=Function(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                        )
+                    ))
+
+                tool_results = self._run_tools(messages, tool_calls)
+                messages.append({
+                    "role": "assistant",
+                    "content": collected["content"],
+                    "tool_calls": tc_list,
+                })
+                messages.extend(tool_results)
+
+                tool_rounds = 1
+                max_rounds = 3
+
+                while tool_rounds < max_rounds:
+                    tool_rounds += 1
+                    try:
+                        r2 = self._call(messages, tools=TOOL_SCHEMAS, tool_choice="auto")
+                        reply_msg = r2.choices[0].message
+                        messages.append(reply_msg)
+
+                        if not reply_msg.tool_calls:
+                            reply = reply_msg.content or ""
+                            yield ("token", reply)
+                            self.store.save_message(session_id, "assistant", reply)
+                            self._msg_count += 1
+                            if self._msg_count % 2 == 0:
+                                self._extract_facts(session_id)
+                            yield ("done", reply)
+                            return
+
+                        tool_results = self._run_tools(messages, reply_msg.tool_calls)
+                        messages.extend(tool_results)
+                    except Exception:
+                        r2 = self._call(messages)
+                        reply = r2.choices[0].message.content or ""
+                        self.store.save_message(session_id, "assistant", reply)
+                        self._msg_count += 1
+                        if self._msg_count % 2 == 0:
+                            self._extract_facts(session_id)
+                        yield ("done", reply)
+                        return
+
+                reply = "[Límite de rondas de herramientas alcanzado]"
+                self.store.save_message(session_id, "assistant", reply)
+                self._msg_count += 1
+                yield ("done", reply)
+            else:
+                reply = collected["content"]
+                self.store.save_message(session_id, "assistant", reply)
+                self._msg_count += 1
+                if self._msg_count % 2 == 0:
+                    self._extract_facts(session_id)
+                yield ("done", reply)
+
+        except Exception as e:
+            yield ("error", str(e))
 
     def remember(self, fact, category="general"):
         self.store.save_fact(fact, category)

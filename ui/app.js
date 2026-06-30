@@ -645,23 +645,65 @@ async function sendMessage() {
   chatInput.value = '';
   chatInput.disabled = true;
   showTyping();
+  let fullReply = '';
+  let assistantDiv = null;
   try {
-    const res = await fetch('/chat', {
+    const res = await fetch('/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, session_id: 'default' }),
     });
-    const data = await res.json();
-    hideTyping();
-    const reply = data.reply || '[sin respuesta]';
-    addMessage('assistant', reply);
-    triggerReaction();
-    if (chatCollapsed) {
-      showToast(reply);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let currentEvent = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n');
+      buffer = parts.pop() || '';
+      for (const line of parts) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6));
+          if (currentEvent === 'token' && data.token) {
+            fullReply += data.token;
+            if (!assistantDiv) {
+              hideTyping();
+              assistantDiv = document.createElement('div');
+              assistantDiv.className = 'message assistant';
+              chatMessages.appendChild(assistantDiv);
+            }
+            assistantDiv.textContent = fullReply;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          } else if (currentEvent === 'done' && data.reply) {
+            if (!assistantDiv) {
+              hideTyping();
+              addMessage('assistant', data.reply);
+            } else {
+              assistantDiv.textContent = data.reply;
+            }
+            fullReply = data.reply;
+            triggerReaction();
+            if (chatCollapsed) showToast(data.reply);
+          } else if (currentEvent === 'tool_calls_start' && data.interim) {
+            const toolMsg = data.interim || '[usando herramientas...]';
+            hideTyping();
+            addMessage('assistant', toolMsg + ' 🔧');
+            fullReply = toolMsg;
+          } else if (currentEvent === 'error' && data.error) {
+            hideTyping();
+            addMessage('assistant', '[Error: ' + data.error + ']');
+          }
+        }
+      }
     }
   } catch {
     hideTyping();
-    addMessage('assistant', '[Error]');
+    if (!fullReply) addMessage('assistant', '[Error de conexión]');
   }
   chatInput.disabled = false;
   chatInput.focus();
@@ -753,18 +795,18 @@ document.getElementById('memory-header-click').addEventListener('click', () => {
 });
 
 // ─── Stats ───
+const statsProvider = document.getElementById('stats-provider');
 const statsModel = document.getElementById('stats-model');
 const statsMessages = document.getElementById('stats-messages');
-const statsCategories = document.getElementById('stats-categories');
 const statsRam = document.getElementById('stats-ram');
 
 async function updateStats() {
   try {
     const res = await fetch('/api/stats');
     const data = await res.json();
-    if (statsModel) statsModel.textContent = (data.provider ? data.provider + '/' : '') + data.model;
+    if (statsProvider) statsProvider.textContent = data.provider || 'groq';
+    if (statsModel) statsModel.textContent = data.model || '--';
     if (statsMessages) statsMessages.textContent = data.messages;
-    if (statsCategories) statsCategories.textContent = Object.keys(data.categories || {}).length;
     if (statsRam) statsRam.textContent = data.memory_usage_pct != null ? data.memory_usage_pct + '%' : '--';
   } catch { /* silent */ }
 }
@@ -817,7 +859,25 @@ function connectWS() {
   ws.onclose = () => setTimeout(connectWS, 3000);
 }
 
+// ─── History ───
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/history/default');
+    const data = await res.json();
+    if (!data.messages || data.messages.length === 0) return;
+    chatMessages.innerHTML = '';
+    for (const m of data.messages) {
+      const div = document.createElement('div');
+      div.className = 'message ' + (m.role === 'user' ? 'user' : 'assistant');
+      div.textContent = m.content;
+      chatMessages.appendChild(div);
+    }
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  } catch { /* silent */ }
+}
+
 // ─── Init ───
+loadHistory();
 loadMemories();
 setInterval(loadMemories, 30000);
 loadNews();
