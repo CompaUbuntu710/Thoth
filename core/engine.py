@@ -71,15 +71,14 @@ Respond with ONLY the category name."""
 
 SUMMARIZE_PROMPT = """Resume la siguiente conversación en 2-3 oraciones, capturando los temas principales, información importante, y tareas pendientes. Solo el resumen, sin introducción."""
 
-CRITIC_PROMPT = """Revisa la siguiente respuesta del asistente Thoth. Verifica:
-1. ¿La respuesta es precisa y útil para la pregunta del usuario?
-2. ¿Podría mejorarse la claridad o el tono?
-3. ¿Hay errores fácticos o de formato?
-4. ¿Usó herramientas cuando era necesario?
+CRITIC_PROMPT = """Revisa la siguiente respuesta del asistente Thoth. SOLO intervén si hay:
+1. Errores factuales graves
+2. Respuestas inseguras o dañinas
+3. Formato completamente roto
 
-Si la respuesta está bien, responde SOLO con: OK
-Si hay mejoras, responde con la versión corregida/mejorada de la respuesta del asistente.
-No añadas explicaciones. No digas "versión mejorada". Solo responde OK o el texto corregido."""
+Si la respuesta está bien (incluso si es simple o corta), responde SOLO: OK
+Si hay errores graves, responde con la versión corregida.
+No añadas explicaciones. No alargues respuestas cortas. No critiques el uso de herramientas."""
 
 MAX_HISTORY = 50
 

@@ -53,6 +53,17 @@ def _get_conn():
             ip TEXT DEFAULT ''
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+            session_id TEXT NOT NULL,
+            user_message TEXT NOT NULL,
+            assistant_reply TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            reason TEXT DEFAULT ''
+        )
+    """)
     conn.commit()
     return conn
 

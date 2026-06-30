@@ -305,6 +305,26 @@ async def profile(username: str = Depends(get_current_user)):
 
 from memory.document_processor import document_store, UPLOAD_DIR, ensure_upload_dir
 
+@app.post("/api/feedback")
+async def submit_feedback(req: Request):
+    body = await req.json()
+    session_id = body.get("session_id", "default")
+    user_message = body.get("user_message", "")
+    assistant_reply = body.get("assistant_reply", "")
+    rating = body.get("rating", 0)
+    reason = body.get("reason", "")
+    try:
+        from core.observability import _get_conn
+        conn = _get_conn()
+        conn.execute(
+            "INSERT INTO feedback (session_id, user_message, assistant_reply, rating, reason) VALUES (?, ?, ?, ?, ?)",
+            (session_id, user_message[:500], assistant_reply[:2000], rating, reason[:200]),
+        )
+        conn.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 SETUP_FILE = os.path.join(os.path.dirname(__file__), "..", "memory", "setup.json")
 
 def _get_setup():

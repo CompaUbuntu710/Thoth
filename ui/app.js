@@ -600,6 +600,10 @@ const chatToast = document.getElementById('chat-toast');
 const toastContent = chatToast.querySelector('.toast-content');
 let chatCollapsed = false;
 
+let _lastUserMsg = '';
+let _lastReply = '';
+let _lastSessionId = 'default';
+
 function addMessage(role, text) {
   const div = document.createElement('div');
   div.className = `message ${role}`;
@@ -609,6 +613,44 @@ function addMessage(role, text) {
   if (role === 'assistant' && localStorage.getItem('thoth_tts') === 'on') {
     speakText(text);
   }
+  if (role === 'assistant') {
+    _lastReply = text;
+    const fb = document.createElement('div');
+    fb.style.cssText = 'display:flex;gap:0.5rem;padding:0.25rem 1rem 0.5rem;font-size:0.75rem;';
+    const up = document.createElement('span');
+    up.textContent = '👍';
+    up.style.cssText = 'cursor:pointer;opacity:0.4;transition:opacity.2s;';
+    up.onmouseenter = () => up.style.opacity = '1';
+    up.onmouseleave = () => up.style.opacity = '0.4';
+    up.onclick = () => { sendFeedback(1); up.style.opacity = '1'; up.onclick = null; };
+    const down = document.createElement('span');
+    down.textContent = '👎';
+    down.style.cssText = 'cursor:pointer;opacity:0.4;transition:opacity.2s;';
+    down.onmouseenter = () => down.style.opacity = '1';
+    down.onmouseleave = () => down.style.opacity = '0.4';
+    down.onclick = () => { const reason = prompt('¿Qué podría mejorar? (opcional)') || ''; sendFeedback(-1, reason); down.style.opacity = '1'; down.onclick = null; };
+    fb.appendChild(up);
+    fb.appendChild(down);
+    chatMessages.appendChild(fb);
+  } else if (role === 'user') {
+    _lastUserMsg = text;
+  }
+}
+
+async function sendFeedback(rating, reason = '') {
+  try {
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        session_id: _lastSessionId,
+        user_message: _lastUserMsg,
+        assistant_reply: _lastReply,
+        rating,
+        reason,
+      }),
+    });
+  } catch {}
 }
 
 function showTyping() {
@@ -656,6 +698,7 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, session_id: 'default' }),
     });
+    _lastSessionId = 'default';
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
