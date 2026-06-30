@@ -2,10 +2,12 @@ import os
 import time
 import json
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
-from core.engine import ThothEngine
+from api.auth import get_current_user
+from core.engine import ThothEngine, PROVIDERS
+from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
 from memory.store import MemoryStore
 from pydantic import BaseModel
 from api.ws_manager import ws_manager
@@ -182,6 +184,72 @@ def news():
             {"title": "Memoria activa: " + str(len(store.get_facts())) + " registros", "source": "thoth"},
         ]
     return {"news": items[:8]}
+
+@app.get("/api/providers")
+def list_providers():
+    """Lista proveedores disponibles con su estado (key configurada o no)."""
+    result = []
+    for name, cfg in PROVIDERS.items():
+        key = os.getenv(cfg["api_key_env"])
+        result.append({
+            "name": name,
+            "description": cfg["description"],
+            "has_key": bool(key),
+            "active": name == engine.provider_name,
+            "models": cfg["models"],
+            "vision_model": cfg.get("vision_model"),
+        })
+    return {"providers": result}
+
+@app.get("/api/tools")
+def list_tools():
+    """Lista todas las herramientas disponibles."""
+    tools = []
+    for s in TOOL_SCHEMAS:
+        fn = s.get("function", {})
+        tools.append({
+            "name": fn.get("name"),
+            "description": fn.get("description", ""),
+            "parameters": list(fn.get("parameters", {}).get("properties", {}).keys()),
+        })
+    return {"tools": tools}
+
+@app.get("/api/settings")
+def settings_page():
+    path = os.path.join(UI_DIR, "settings.html")
+    if not os.path.exists(path):
+        return HTMLResponse("<h1>Settings not found</h1>", status_code=404)
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+@app.post("/api/auth/signup")
+def signup(req: Request):
+    body = asyncio.run(req.json())
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Usuario y contraseña requeridos")
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="Contraseña debe tener al menos 4 caracteres")
+    from api.auth import create_user
+    if create_user(username, password):
+        return {"status": "ok"}
+    raise HTTPException(status_code=409, detail="El usuario ya existe")
+
+@app.post("/api/auth/login")
+async def login(req: Request):
+    body = await req.json()
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    from api.auth import verify_user, create_token
+    if not verify_user(username, password):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    token, expires = create_token(username)
+    return {"token": token, "expires": expires, "username": username}
+
+@app.get("/api/auth/profile")
+async def profile(username: str = Depends(get_current_user)):
+    return {"username": username}
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):

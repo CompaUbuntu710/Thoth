@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thoth — Settings</title>
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { background: #0a0a14; color: #c0c0d0; font-family: 'Inter', sans-serif; padding: 2rem; }
+    h1 { color: #00e5ff; font-size: 1.5rem; margin-bottom: 2rem; }
+    h2 { color: #bf80ff; font-size: 1.1rem; margin: 1.5rem 0 0.75rem; }
+    .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+    .provider-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+    .provider-item:hover { background: rgba(255,255,255,0.06); }
+    .provider-item.active { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); }
+    .provider-name { font-weight: 600; color: #e0e0f0; min-width: 100px; }
+    .provider-desc { font-size: 0.85rem; color: #888; flex: 1; }
+    .provider-key { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 4px; }
+    .key-set { background: rgba(0,255,100,0.15); color: #00ff64; }
+    .key-missing { background: rgba(255,100,0,0.15); color: #ff8800; }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .badge-active { background: #00e5ff; color: #000; }
+    .badge-inactive { background: rgba(255,255,255,0.1); color: #666; }
+    .tool-item { display: flex; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .tool-item:last-child { border-bottom: none; }
+    .tool-name { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; min-width: 160px; color: #bf80ff; }
+    .tool-desc { font-size: 0.85rem; color: #888; flex: 1; }
+    .back-link { color: #00e5ff; text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { text-decoration: underline; }
+    .nav { display: flex; gap: 1rem; margin-bottom: 2rem; }
+    .nav a { color: #888; text-decoration: none; padding: 0.4rem 1rem; border-radius: 4px; font-size: 0.9rem; }
+    .nav a:hover { color: #e0e0f0; background: rgba(255,255,255,0.05); }
+    .nav a.active { color: #00e5ff; background: rgba(0,229,255,0.1); }
+    .history-item { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; }
+    .history-id { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #bf80ff; }
+    .history-date { font-size: 0.8rem; color: #666; }
+  </style>
+</head>
+<body>
+  <div style="max-width: 800px; margin: 0 auto;">
+    <div class="nav">
+      <a href="/" class="back-link">&larr; Thoth</a>
+      <a href="/settings" class="active">Proveedores</a>
+      <a href="/settings?tab=history" id="tab-history">Historial</a>
+      <a href="/settings?tab=tools" id="tab-tools">Herramientas</a>
+    </div>
+
+    <div id="tab-providers">
+      <h1>Proveedores</h1>
+      <div id="providers-list">Cargando...</div>
+    </div>
+
+    <div id="tab-history" style="display:none;">
+      <h1>Historial de conversaciones</h1>
+      <div id="history-list">Cargando...</div>
+    </div>
+
+    <div id="tab-tools" style="display:none;">
+      <h1>Herramientas disponibles</h1>
+      <div id="tools-list">Cargando...</div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab') || 'providers';
+
+    function showTab(name) {
+      document.getElementById('tab-providers').style.display = name === 'providers' ? 'block' : 'none';
+      document.getElementById('tab-history').style.display = name === 'history' ? 'block' : 'none';
+      document.getElementById('tab-tools').style.display = name === 'tools' ? 'block' : 'none';
+      document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+      const link = document.querySelector(`.nav a[href*="${name}"]`) || document.querySelector('.nav a[href="/settings"]');
+      if (link) link.classList.add('active');
+    }
+
+    async function switchProvider(name) {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `switch_provider("${name}")`, session_id: '_system' }),
+      });
+      const data = await res.json();
+      loadProviders();
+      return data;
+    }
+
+    async function loadProviders() {
+      try {
+        const res = await fetch('/api/providers');
+        const data = await res.json();
+        const list = document.getElementById('providers-list');
+        list.innerHTML = data.providers.map(p => `
+          <div class="card provider-item ${p.active ? 'active' : ''}" onclick="switchProvider('${p.name}')">
+            <div class="provider-name">${p.name}</div>
+            <div class="provider-desc">${p.description}</div>
+            <span class="provider-key ${p.has_key ? 'key-set' : 'key-missing'}">${p.has_key ? '✓ Key' : '✗ No key'}</span>
+            <span class="badge ${p.active ? 'badge-active' : 'badge-inactive'}">${p.active ? 'ACTIVO' : ''}</span>
+          </div>
+        `).join('');
+      } catch { list.innerHTML = 'Error cargando proveedores'; }
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/sessions');
+        const data = await res.json();
+        const list = document.getElementById('history-list');
+        if (!data.sessions || data.sessions.length === 0) {
+          list.innerHTML = '<p style="color:#666;">No hay conversaciones aún.</p>';
+          return;
+        }
+        list.innerHTML = data.sessions.map(s => `
+          <div class="history-item">
+            <span class="history-id">${s.id}</span>
+            <span class="history-date">${new Date(s.created_at).toLocaleString('es-MX')}</span>
+          </div>
+        `).join('');
+      } catch { list.innerHTML = 'Error cargando historial'; }
+    }
+
+    async function loadTools() {
+      try {
+        const res = await fetch('/api/tools');
+        const data = await res.json();
+        const list = document.getElementById('tools-list');
+        list.innerHTML = data.tools.map(t => `
+          <div class="tool-item">
+            <span class="tool-name">${t.name}</span>
+            <span class="tool-desc">${t.description}</span>
+          </div>
+        `).join('');
+      } catch { list.innerHTML = 'Error cargando herramientas'; }
+    }
+
+    showTab(tab);
+    loadProviders();
+    loadHistory();
+    loadTools();
+  </script>
+</body>
+</html>
