@@ -38,6 +38,13 @@ PROVIDERS = {
         "vision_model": "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
         "description": "Together AI — modelos abiertos distribuidos, inferencia en clúster",
     },
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "api_key_env": "OLLAMA_API_KEY",
+        "models": {"chat": "llama3.2", "extract": "llama3.2:1b"},
+        "vision_model": "llava",
+        "description": "Ollama — inferencia local con Llama 3, Mistral, Qwen, etc.",
+    },
 }
 
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "groq").lower()

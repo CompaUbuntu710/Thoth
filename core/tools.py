@@ -264,7 +264,7 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "provider": {
                         "type": "string",
-                        "enum": ["groq", "openrouter", "nvidia", "together"],
+                        "enum": ["groq", "openrouter", "nvidia", "together", "ollama"],
                         "description": "Nombre del proveedor"
                     }
                 },
@@ -357,6 +357,25 @@ TOOL_SCHEMAS = [
                     "start_at": {"type": "string", "description": "Fecha ISO de inicio"},
                     "end_at": {"type": "string", "description": "Fecha ISO de fin (opcional)"},
                     "event_id": {"type": "integer", "description": "ID del evento (requerido para delete)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "email",
+            "description": "Envía o lista emails. Acciones: send (to + subject + body), list (de buzón), status (config). Requiere credenciales SMTP/IMAP en .env",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["send", "list", "status"]},
+                    "to": {"type": "string", "description": "Destinatario para send"},
+                    "subject": {"type": "string", "description": "Asunto del email"},
+                    "body": {"type": "string", "description": "Cuerpo del email"},
+                    "mailbox": {"type": "string", "description": "Buzón IMAP (default INBOX)"},
+                    "limit": {"type": "integer", "description": "Máx emails a listar (default 5)"},
                 },
                 "required": ["action"],
             },
@@ -760,6 +779,13 @@ def handle_calendar(action, title=None, description="", start_at=None, end_at=No
     except Exception as e:
         return f"[Error en calendario: {e}]"
 
+def handle_email(action, to=None, subject="", body="", mailbox="INBOX", limit=5):
+    try:
+        from tools.email_tool import handle_email as he
+        return he(action, to=to, subject=subject, body=body, mailbox=mailbox, limit=limit)
+    except Exception as e:
+        return f"[Error en email: {e}]"
+
 def handle_browser_agent(action, url=None, selector=None, text=None, query=None):
     try:
         from tools.browser_agent import handle_browser_agent as hb
@@ -791,5 +817,6 @@ TOOL_HANDLERS = {
     "reminder": handle_reminder,
     "alarm": handle_alarm,
     "calendar": handle_calendar,
+    "email": handle_email,
     "browser_agent": handle_browser_agent,
 }
