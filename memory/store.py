@@ -91,18 +91,20 @@ class MemoryStore:
         with self._lock:
             now = datetime.now(timezone.utc).isoformat()
             try:
-                self.conn.execute(
+                cur = self.conn.execute(
                     "INSERT INTO facts (fact, category, source_session, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                     (fact, category, source_session, now, now),
                 )
                 self.conn.commit()
-                return True
+                return cur.lastrowid
             except sqlite3.IntegrityError:
                 self.conn.execute(
                     "UPDATE facts SET updated_at = ? WHERE fact = ?", (now, fact)
                 )
                 self.conn.commit()
-                return False
+                cur = self.conn.execute("SELECT id FROM facts WHERE fact = ?", (fact,))
+                row = cur.fetchone()
+                return row[0] if row else None
 
     def get_facts(self, search=None):
         if search:

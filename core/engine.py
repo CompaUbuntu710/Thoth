@@ -4,6 +4,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from memory.store import MemoryStore
 from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
+from memory.vector_store import VectorStore, HAS_CHROMA
 from core.agent import Agent, AGENT_DEFS
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -57,6 +58,8 @@ ROUTING_PROMPT = """Classify the user message into one category:
 
 Respond with ONLY the category name."""
 
+SUMMARIZE_PROMPT = """Resume la siguiente conversación en 2-3 oraciones, capturando los temas principales, información importante, y tareas pendientes. Solo el resumen, sin introducción."""
+
 MAX_HISTORY = 50
 
 
@@ -73,6 +76,7 @@ class ThothEngine:
         self.vision_model = PROVIDER.get("vision_model", self.model)
         self._msg_count = 0
         self._agents = {}
+        self.vector_store = VectorStore() if HAS_CHROMA else None
         os.environ.setdefault("API_BASE_URL", self.provider["base_url"])
         os.environ.setdefault("MODEL_NAME", self.model)
         os.environ.setdefault("VISION_MODEL", self.vision_model)
@@ -186,7 +190,20 @@ class ThothEngine:
         if facts:
             lines = [f"- ({f['category']}) {f['fact']}" for f in facts]
             facts_text = "\nRecuerdos sobre el usuario:\n" + "\n".join(lines)
-        msgs = [{"role": "system", "content": agent.system_prompt + facts_text}]
+
+        summaries = ""
+        if self.vector_store and HAS_CHROMA:
+            try:
+                recent = self.vector_store.search(
+                    "conversación resumen", n_results=3, category="resumen"
+                )
+                if recent:
+                    summary_lines = [f"- {r['fact']}" for r in recent]
+                    summaries = "\nResúmenes de conversaciones anteriores:\n" + "\n".join(summary_lines)
+            except Exception:
+                pass
+
+        msgs = [{"role": "system", "content": agent.system_prompt + facts_text + summaries}]
         history = self.store.get_history(session_id, limit=MAX_HISTORY)
         msgs.extend(history)
         return msgs
@@ -207,7 +224,35 @@ class ThothEngine:
             facts = json.loads(raw)
             if isinstance(facts, list):
                 for f in facts:
-                    self.store.save_fact(f["fact"], f.get("category", "general"), session_id)
+                    fact_id = self.store.save_fact(f["fact"], f.get("category", "general"), session_id)
+                    if self.vector_store and fact_id:
+                        self.vector_store.add_fact(fact_id, f["fact"], f.get("category", "general"), session_id)
+        except Exception:
+            pass
+
+    def _summarize_if_needed(self, session_id):
+        """Resume la conversación cuando se acerca al límite de MAX_HISTORY."""
+        try:
+            history = self.store.get_history(session_id, limit=MAX_HISTORY)
+            if len(history) < MAX_HISTORY - 5:
+                return
+            text_to_summarize = "\n".join(
+                f"{m['role']}: {m['content'][:200]}" for m in history[:20]
+            )
+            r = self.extractor.chat.completions.create(
+                model=self.extract_model,
+                messages=[
+                    {"role": "system", "content": SUMMARIZE_PROMPT},
+                    {"role": "user", "content": text_to_summarize},
+                ],
+                temperature=0.3, max_tokens=200,
+            )
+            summary = r.choices[0].message.content.strip()
+            if summary and self.vector_store:
+                from datetime import datetime, timezone
+                import hashlib
+                sid = hashlib.md5(summary.encode()).hexdigest()[:12]
+                self.vector_store.add_fact(sid, summary, "resumen", session_id)
         except Exception:
             pass
 
@@ -270,6 +315,8 @@ class ThothEngine:
         self._msg_count += 1
         if self._msg_count % 2 == 0:
             self._extract_facts(session_id)
+        if self._msg_count % 10 == 0:
+            self._summarize_if_needed(session_id)
         return reply
 
     def chat_stream(self, msg, session_id="default"):

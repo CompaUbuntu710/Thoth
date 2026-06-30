@@ -213,7 +213,8 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Texto a buscar en los recuerdos"}
+                    "query": {"type": "string", "description": "Texto a buscar en los recuerdos"},
+                    "semantic": {"type": "boolean", "description": "Usar búsqueda semántica por significado (true) o búsqueda literal (false, default)"}
                 },
                 "required": ["query"],
             },
@@ -527,15 +528,28 @@ def handle_browser_open(url):
         return f"[Error abriendo navegador: {e}]"
 
 
-def handle_memory_search(query):
+def handle_memory_search(query, semantic=False):
     try:
         from memory.store import MemoryStore
         store = MemoryStore()
         facts = store.get_facts(search=query)
-        if not facts:
+        results = []
+
+        if semantic:
+            try:
+                from memory.vector_store import VectorStore
+                vs = VectorStore()
+                semantic_results = vs.search(query, n_results=5)
+                for r in semantic_results:
+                    results.append(f"- ({r['category']}) {r['fact']} [sim: {r['score']:.3f}]")
+            except Exception:
+                pass
+        else:
+            results = [f"- ({f['category']}) {f['fact']}" for f in facts[:10]]
+
+        if not results:
             return "[Sin resultados en memoria]"
-        lines = [f"- ({f['category']}) {f['fact']}" for f in facts[:10]]
-        return "Recuerdos encontrados:\n" + "\n".join(lines)
+        return "Recuerdos encontrados:\n" + "\n".join(results)
     except Exception as e:
         return f"[Error buscando en memoria: {e}]"
 
