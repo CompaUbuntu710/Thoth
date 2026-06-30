@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thoth</title>
+  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="scan-lines"></div>
+  <div id="app">
+    <div id="globe-container"></div>
+
+    <header id="status-bar">
+      <div class="status-left">
+        <span class="logo">&#9763; THOTH</span>
+        <span class="version">v2</span>
+      </div>
+      <div class="status-center">
+        <span class="indicator">Online</span>
+      </div>
+      <div class="status-right">
+        <span id="clock"></span>
+      </div>
+    </header>
+
+    <aside id="hud">
+      <div class="hud-item">
+        <span class="hud-label">Status</span>
+        <span class="hud-value" id="hud-status">ONLINE</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Memoria</span>
+        <span class="hud-value" id="hud-memory-count">0 <span class="hud-unit">registros</span></span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Sesiones</span>
+        <span class="hud-value" id="hud-sessions">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Uptime</span>
+        <span class="hud-value" id="hud-uptime">--:--:--</span>
+      </div>
+    </aside>
+
+    <button id="chat-toggle" title="Toggle terminal">
+      <span class="toggle-dot"></span>
+      <span class="toggle-label">TERM</span>
+    </button>
+
+    <aside id="chat-panel">
+      <div class="panel-header">
+        <h2>Terminal</h2>
+        <span class="panel-dot"></span>
+      </div>
+      <div id="chat-messages">
+        <div class="message assistant">Soy Thoth. Conectado.</div>
+      </div>
+      <div id="chat-input-area">
+        <input id="chat-input" type="text" placeholder="Mensaje..." autofocus>
+        <button id="chat-send" title="Enviar">&#10148;</button>
+      </div>
+    </aside>
+
+    <div id="chat-toast" class="hidden">
+      <div class="toast-icon">&#9763;</div>
+      <div class="toast-content"></div>
+    </div>
+
+    <footer id="bottom-bar">
+      <div id="news-panel">
+        <div class="news-header">
+          <span class="news-label">&#9881; Noticias</span>
+          <span id="news-count" class="news-count">0</span>
+        </div>
+        <div id="news-list"></div>
+      </div>
+      <div id="music-player"></div>
+      <div id="memory-bar">
+        <div class="memory-header" id="memory-header-click">
+          <span>&#9676; <span id="memory-count">0</span> registros</span>
+          <span class="memory-arrow">&#9660;</span>
+        </div>
+        <div id="memory-list" class="collapsed"></div>
+      </div>
+    </footer>
+
+    <aside id="right-panel">
+      <div id="map-container">
+        <div class="panel-header">
+          <h2>Mapa Mental</h2>
+          <span class="panel-dot"></span>
+        </div>
+        <div id="map-canvas-container"></div>
+      </div>
+    </aside>
+
+    <div id="stats-bar">
+      <div class="stats-item">
+        <span class="stats-icon">&#9432;</span>
+        <span class="stats-label">Proveedor</span>
+        <span class="stats-value" id="stats-provider" style="color:var(--cyan)">--</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">Modelo</span>
+        <span class="stats-value" id="stats-model">--</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">Mensajes</span>
+        <span class="stats-value" id="stats-messages">0</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">RAM</span>
+        <span class="stats-value" id="stats-ram">--</span>
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="/static/app.js?v=6"></script>
+</body>
+</html>

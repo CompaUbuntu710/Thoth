@@ -8,7 +8,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "thoth.db")
 class MemoryStore:
     def __init__(self, db_path=None):
         self.db_path = db_path or DB_PATH
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_tables()
 
