@@ -92,10 +92,10 @@ Thoth registra cada interacción, detecta patrones de error, ajusta prompts, sug
 - [ ] QR code para vincular Telegram al instante
 
 **Multi-agente básico:**
-- [ ] Refactor engine → `Orchestrator` + `Agent` classes
-- [ ] Agente coordinador (Thoth) + 3 especialistas: `code_agent`, `web_agent`, `file_agent`
-- [ ] Cada agente con su propio system prompt y tools
-- [ ] El coordinador decide qué agente llama según la query
+- [x] Refactor engine → `Orchestrator` + `Agent` classes
+- [x] Agente coordinador (Thoth) + 3 especialistas: `code`, `web`, `memory`
+- [x] Cada agente con su propio system prompt y tools
+- [x] El coordinador decide qué agente llama según la query
 
 **Memoria mejorada:**
 - [ ] ChromaDB local para embeddings semánticos
