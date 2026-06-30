@@ -284,6 +284,33 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_documents",
+            "description": "Busca información en documentos subidos (PDF, DOCX, TXT, MD, CSV, JSON, código). Útil cuando el usuario pregunta sobre el contenido de sus archivos.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Qué buscar en los documentos"},
+                    "file_filter": {"type": "string", "description": "Opcional: nombre exacto del archivo para limitar la búsqueda"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_documents",
+            "description": "Lista los documentos que han sido subidos e indexados, con su tipo y tamaño.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -616,6 +643,33 @@ def handle_switch_provider(provider):
 def handle_system_status():
     return "__SYSTEM_STATUS__"
 
+def handle_query_documents(query, file_filter=None):
+    try:
+        from memory.document_processor import document_store
+        results = document_store.search(query, n_results=5, file_filter=file_filter)
+        if not results:
+            return "[No se encontraron resultados en documentos]"
+        lines = []
+        seen_files = set()
+        for r in results:
+            seen_files.add(r["file_name"])
+            lines.append(f"[{r['file_name']}] (score: {r['score']:.3f}) {r['text'][:500]}")
+        header = f"Documentos consultados: {', '.join(sorted(seen_files))}"
+        return header + "\n\n" + "\n\n---\n\n".join(lines)
+    except Exception as e:
+        return f"[Error consultando documentos: {e}]"
+
+def handle_list_documents():
+    try:
+        from memory.document_processor import document_store
+        docs = document_store.list_documents()
+        if not docs:
+            return "[No hay documentos indexados]"
+        lines = [f"- {d['file_name']} ({d['file_type']}, {d['total_chunks']} chunks)" for d in docs]
+        return "Documentos disponibles:\n" + "\n".join(lines)
+    except Exception as e:
+        return f"[Error listando documentos: {e}]"
+
 TOOL_HANDLERS = {
     "run_command": handle_run_command,
     "web_search": handle_web_search,
@@ -635,4 +689,6 @@ TOOL_HANDLERS = {
     "clipboard": handle_clipboard,
     "switch_provider": handle_switch_provider,
     "system_status": handle_system_status,
+    "query_documents": handle_query_documents,
+    "list_documents": handle_list_documents,
 }

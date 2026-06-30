@@ -130,6 +130,7 @@ TUS 18 HERRAMIENTAS DISPONIBLES:
             "get_weather", "calculate", "python_repl", "system_info",
             "notify", "screenshot", "image_analysis", "browser_open",
             "memory_search", "web_fetch", "clipboard",
+            "query_documents", "list_documents",
             "switch_provider", "system_status",
         ],
     },
@@ -142,7 +143,7 @@ Para cambios grandes, lee primero, escribe después."""
 ,
         "tool_names": [
             "run_command", "python_repl", "read_file", "write_file", "list_files",
-            "web_search", "memory_search",
+            "web_search", "memory_search", "query_documents",
         ],
     },
     "web": {

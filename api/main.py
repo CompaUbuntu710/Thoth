@@ -10,6 +10,7 @@ from core.engine import ThothEngine, PROVIDERS
 from core.tools import TOOL_SCHEMAS, TOOL_HANDLERS
 from memory.store import MemoryStore
 from pydantic import BaseModel
+from fastapi import UploadFile, File, Form
 from api.ws_manager import ws_manager
 from api.telegram_bot import start_bot, init_engine
 
@@ -250,6 +251,34 @@ async def login(req: Request):
 @app.get("/api/auth/profile")
 async def profile(username: str = Depends(get_current_user)):
     return {"username": username}
+
+from memory.document_processor import document_store, UPLOAD_DIR, ensure_upload_dir
+
+@app.post("/api/documents/upload")
+async def upload_document(file: UploadFile = File(...)):
+    ensure_upload_dir()
+    safe_name = file.filename.replace("..", "").replace("/", "").replace("\\", "")
+    path = os.path.join(UPLOAD_DIR, safe_name)
+    content = await file.read()
+    with open(path, "wb") as f:
+        f.write(content)
+    result = document_store.index_file(path, original_name=file.filename)
+    return result
+
+@app.get("/api/documents")
+def list_documents_api():
+    docs = document_store.list_documents()
+    return {"documents": docs, "total_chunks": document_store.count()}
+
+@app.delete("/api/documents/{file_name}")
+def delete_document(file_name: str):
+    ok = document_store.delete_file(file_name)
+    if ok:
+        doc_path = os.path.join(UPLOAD_DIR, file_name)
+        if os.path.exists(doc_path):
+            os.remove(doc_path)
+        return {"status": "ok"}
+    return {"status": "error", "message": "Documento no encontrado"}
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):

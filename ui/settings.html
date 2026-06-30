@@ -46,6 +46,7 @@
       <a href="/settings" class="active">Proveedores</a>
       <a href="/settings?tab=history" id="tab-history">Historial</a>
       <a href="/settings?tab=tools" id="tab-tools">Herramientas</a>
+      <a href="/settings?tab=documents" id="tab-documents-link">Documentos</a>
     </div>
 
     <div id="tab-providers">
@@ -62,6 +63,18 @@
       <h1>Herramientas disponibles</h1>
       <div id="tools-list">Cargando...</div>
     </div>
+
+    <div id="tab-documents" style="display:none;">
+      <h1>Documentos</h1>
+      <div class="card" style="padding:2rem;text-align:center;border:2px dashed rgba(0,229,255,0.3);cursor:pointer;" id="drop-zone" ondragover="event.preventDefault()" ondrop="handleDrop(event)">
+        <div style="font-size:2rem;margin-bottom:0.5rem;color:var(--cyan);">&#128196;</div>
+        <p style="color:#888;">Arrastra archivos aquí o <a href="#" onclick="document.getElementById('file-input').click();return false;" style="color:var(--cyan);">selecciona</a></p>
+        <input type="file" id="file-input" multiple style="display:none" onchange="handleFiles(this.files)">
+        <p style="font-size:0.8rem;color:#555;margin-top:0.5rem;">PDF, DOCX, TXT, MD, CSV, JSON, XLSX, código</p>
+      </div>
+      <div id="upload-progress" style="display:none;margin:0.5rem 0;font-size:0.85rem;color:var(--gold);"></div>
+      <div id="documents-list">Cargando...</div>
+    </div>
   </div>
 
   <script>
@@ -72,6 +85,7 @@
       document.getElementById('tab-providers').style.display = name === 'providers' ? 'block' : 'none';
       document.getElementById('tab-history').style.display = name === 'history' ? 'block' : 'none';
       document.getElementById('tab-tools').style.display = name === 'tools' ? 'block' : 'none';
+      document.getElementById('tab-documents').style.display = name === 'documents' ? 'block' : 'none';
       document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
       const link = document.querySelector(`.nav a[href*="${name}"]`) || document.querySelector('.nav a[href="/settings"]');
       if (link) link.classList.add('active');
@@ -136,10 +150,61 @@
       } catch { list.innerHTML = 'Error cargando herramientas'; }
     }
 
+    async function uploadFile(file) {
+      const prog = document.getElementById('upload-progress');
+      prog.style.display = 'block';
+      prog.textContent = `Subiendo ${file.name}...`;
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const res = await fetch('/api/documents/upload', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          prog.textContent = `✓ ${file.name}: ${data.chunks} chunks, ${data.characters} caracteres`;
+        } else {
+          prog.textContent = `✗ ${file.name}: ${data.message}`;
+        }
+      } catch {
+        prog.textContent = `✗ ${file.name}: error de conexión`;
+      }
+      loadDocuments();
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      handleFiles(e.dataTransfer.files);
+    }
+
+    function handleFiles(files) {
+      for (const f of files) uploadFile(f);
+    }
+
+    async function loadDocuments() {
+      try {
+        const res = await fetch('/api/documents');
+        const data = await res.json();
+        const list = document.getElementById('documents-list');
+        if (!data.documents || data.documents.length === 0) {
+          list.innerHTML = '<p style="color:#666;margin-top:1rem;">No hay documentos subidos.</p>';
+          return;
+        }
+        list.innerHTML = '<h2 style="margin-top:1.5rem;">Documentos indexados</h2>' +
+          data.documents.map(d => `
+            <div class="history-item">
+              <span class="history-id">${d.file_name}</span>
+              <span class="history-date">${d.file_type} &middot; ${d.total_chunks} chunks &middot; ${new Date(d.created_at).toLocaleString('es-MX')}</span>
+            </div>
+          `).join('');
+      } catch {
+        document.getElementById('documents-list').innerHTML = 'Error cargando documentos';
+      }
+    }
+
     showTab(tab);
     loadProviders();
     loadHistory();
     loadTools();
+    loadDocuments();
   </script>
 </body>
 </html>
