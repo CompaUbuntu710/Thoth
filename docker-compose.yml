@@ -6,25 +6,25 @@ services:
       - "8000:8000"
     volumes:
       - thoth_data:/thoth/memory
-      - thoth_chroma:/thoth/chroma_db
+      - thoth_chroma:/root/.cache/chroma
       - thoth_browser:/thoth/.browser_profile
+      - thoth_uploads:/thoth/uploads
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
-      - CHROMA_HOST=chromadb
+      - OLLAMA_URL=http://ollama:11434
     depends_on:
       redis:
         condition: service_started
-      chromadb:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
@@ -53,7 +53,7 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/v1/heartbeat"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -66,6 +66,11 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     profiles:
       - llm-local
     deploy:
@@ -76,10 +81,28 @@ services:
               count: all
               capabilities: [gpu]
 
+  nginx:
+    image: nginx:alpine
+    container_name: thoth-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - thoth_static:/var/www/static:ro
+    depends_on:
+      - thoth
+    restart: unless-stopped
+    profiles:
+      - prod
+
 volumes:
   thoth_data:
   thoth_chroma:
   thoth_browser:
+  thoth_uploads:
   redis_data:
   chroma_data:
   ollama_data:
+  thoth_static:
+
