@@ -137,7 +137,7 @@ TUS 18 HERRAMIENTAS DISPONIBLES:
             "memory_search", "web_fetch", "clipboard",
             "query_documents", "list_documents",
             "reminder", "alarm", "calendar",
-            "browser_agent", "email", "plugin",
+            "browser_agent", "email", "social", "plugin",
             "switch_provider", "system_status",
         ],
     },

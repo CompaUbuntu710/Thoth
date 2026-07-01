@@ -384,6 +384,24 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "social",
+            "description": "Redes sociales. Plataforma: twitter. Acciones: search (query), post (text), trends, status. Requiere TWITTER_BEARER_TOKEN en .env",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "platform": {"type": "string", "enum": ["twitter", "status"]},
+                    "action": {"type": "string", "enum": ["search", "post", "trends", "status"]},
+                    "query": {"type": "string", "description": "Búsqueda en Twitter"},
+                    "text": {"type": "string", "description": "Texto del tweet (máx 280 chars)"},
+                    "limit": {"type": "integer", "description": "Resultados máximos (default 5)"},
+                },
+                "required": ["platform", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "plugin",
             "description": "Gestiona plugins: list (lista plugins cargados), load (nombre), unload (nombre). Los plugins añaden herramientas dinámicamente al sistema.",
             "parameters": {
@@ -801,6 +819,13 @@ def handle_email(action, to=None, subject="", body="", mailbox="INBOX", limit=5)
     except Exception as e:
         return f"[Error en email: {e}]"
 
+def handle_social(platform, action, query="", text="", limit=5):
+    try:
+        from tools.social_tool import handle_social as hs
+        return hs(platform, action, query=query, text=text, limit=limit)
+    except Exception as e:
+        return f"[Error en social: {e}]"
+
 def handle_plugin(action, name=None):
     return f"__PLUGIN__:{action}:{name or ''}"
 
@@ -836,6 +861,7 @@ TOOL_HANDLERS = {
     "alarm": handle_alarm,
     "calendar": handle_calendar,
     "email": handle_email,
+    "social": handle_social,
     "plugin": handle_plugin,
     "browser_agent": handle_browser_agent,
 }

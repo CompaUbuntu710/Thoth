@@ -101,6 +101,7 @@ class ThothEngine:
         self._plugin_schemas = []
         self._plugin_handlers = {}
         self._critic_enabled = True
+        self._failover_log = []
         try:
             from core.plugin import load_all
             load_all(self)
@@ -118,6 +119,32 @@ class ThothEngine:
             return self.api_key
         env_var = self.provider.get("api_key_env", "GROQ_API_KEY")
         return os.getenv(env_var) or os.getenv("API_KEY") or os.getenv("GROQ_API_KEY")
+
+    def _get_failover_chain(self):
+        """Returns providers ordered: current first, then others with keys configured."""
+        chain = [self.provider_name]
+        for name, cfg in PROVIDERS.items():
+            if name != self.provider_name and os.getenv(cfg["api_key_env"]):
+                chain.append(name)
+        return chain
+
+    def _failover(self, error_msg=""):
+        """Switch to next available provider. Returns True if switched."""
+        chain = self._get_failover_chain()
+        if len(chain) < 2:
+            return False
+        next_provider = chain[1] if chain[0] == self.provider_name else chain[0]
+        if next_provider == self.provider_name:
+            return False
+        result = self.switch_provider(next_provider)
+        self._failover_log.append({
+            "from": self.provider_name,
+            "to": next_provider,
+            "reason": error_msg[:100],
+            "timestamp": __import__("datetime").datetime.now().isoformat(),
+        })
+        print(f"[Failover] {result}")
+        return True
 
     @property
     def client(self):
@@ -224,6 +251,8 @@ class ThothEngine:
             "messages": self._msg_count,
             "agents": list(AGENT_DEFS.keys()),
             "active_agent": getattr(self, "_last_agent", "thoth"),
+            "failover_chain": self._get_failover_chain(),
+            "failover_count": len(self._failover_log),
         }
 
     def _handle_plugin(self, action, name=None):
@@ -397,10 +426,17 @@ class ThothEngine:
         return results
 
     def _call(self, messages, **kwargs):
-        return self.client.chat.completions.create(
-            model=self.model, messages=messages,
-            temperature=0.7, max_tokens=1024, **kwargs,
-        )
+        try:
+            return self.client.chat.completions.create(
+                model=self.model, messages=messages,
+                temperature=0.7, max_tokens=1024, **kwargs,
+            )
+        except Exception as e:
+            estr = str(e)
+            if "429" in estr or "rate_limit" in estr.lower():
+                if self._failover(estr):
+                    return self._call(messages, **kwargs)
+            raise
 
     def _call_with_log(self, messages, agent_name="thoth", session_id="", **kwargs):
         """Like _call but logs usage to observability."""
