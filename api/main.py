@@ -103,6 +103,12 @@ def setup_page():
     with open(path, encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+@app.get("/admin")
+def admin_page():
+    path = os.path.join(UI_DIR, "admin.html")
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
 @app.get("/api/health")
 def health():
     return {"status": "awakening", "message": "Thoth online"}

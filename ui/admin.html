@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Thoth</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,sans-serif; background:#080b16; color:#e0e0e0; padding:2rem; }
+  h1 { font-size:1.5rem; color:#00e5ff; margin-bottom:0.25rem; }
+  .sub { color:#666; font-size:0.85rem; margin-bottom:1.5rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+  .card { background:rgba(255,255,255,0.03); border:1px solid #222; border-radius:8px; padding:1rem; }
+  .card h3 { font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem; }
+  .card .val { font-size:1.8rem; font-weight:700; color:#fff; }
+  .card .val.gold { color:#ffd700; }
+  .card .val.cyan { color:#00e5ff; }
+  .card .val.green { color:#00e86e; }
+  .card .val.red { color:#ff5555; }
+  .card .row { display:flex; justify-content:space-between; padding:0.25rem 0; font-size:0.85rem; border-bottom:1px solid #1a1a1a; }
+  .card .row:last-child { border:none; }
+  .card .label { color:#888; }
+  .plugin-item { display:flex; justify-content:space-between; align-items:center; padding:0.4rem 0; border-bottom:1px solid #1a1a1a; font-size:0.85rem; }
+  .plugin-item:last-child { border:none; }
+  .plugin-item .name { color:#00e5ff; }
+  .plugin-item .desc { color:#666; font-size:0.75rem; }
+  .plugin-item button { background:#333; color:#fff; border:none; padding:0.2rem 0.5rem; border-radius:4px; cursor:pointer; font-size:0.75rem; }
+  .plugin-item button:hover { background:#555; }
+  .chart { display:flex; gap:2px; align-items:end; height:60px; margin-top:0.5rem; }
+  .chart .bar { flex:1; background:rgba(0,229,255,0.3); border-radius:2px 2px 0 0; min-height:2px; transition:height .5s; }
+  .chart .bar:hover { background:rgba(0,229,255,0.6); }
+  .err-item { font-size:0.8rem; color:#ff5555; padding:0.25rem 0; border-bottom:1px solid #1a1a1a; }
+  .err-item .src { color:#888; }
+  .badge { display:inline-block; padding:0.15rem 0.4rem; border-radius:3px; font-size:0.7rem; }
+  .badge-ok { background:rgba(0,232,110,0.2); color:#00e86e; }
+  .badge-err { background:rgba(255,85,85,0.2); color:#ff5555; }
+</style>
+</head>
+<body>
+  <h1>Thoth · Admin</h1>
+  <p class="sub" id="uptime">Conectando...</p>
+
+  <div class="grid" id="stats-grid">
+    <div class="card"><h3>Mensajes</h3><div class="val cyan" id="msg-count">—</div></div>
+    <div class="card"><h3>Memorias</h3><div class="val gold" id="mem-count">—</div></div>
+    <div class="card"><h3>Sesiones</h3><div class="val" id="session-count">—</div></div>
+    <div class="card"><h3>Provider</h3><div class="val green" id="provider-name" style="font-size:1rem;">—</div></div>
+    <div class="card"><h3>Modelo</h3><div class="val" id="model-name" style="font-size:0.9rem;">—</div></div>
+    <div class="card"><h3>RAM</h3><div class="val" id="ram-pct">—</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card" style="grid-column:span 2;">
+      <h3>Tokens / hora</h3>
+      <div class="chart" id="obs-chart"></div>
+    </div>
+    <div class="card">
+      <h3>Plugins</h3>
+      <div id="plugin-list">Cargando...</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Errores recientes</h3>
+      <div id="error-list" style="max-height:150px;overflow-y:auto;"></div>
+    </div>
+    <div class="card">
+      <h3>Sistema</h3>
+      <div id="sys-info"></div>
+    </div>
+  </div>
+
+<script>
+  let ws = null;
+  let statsInterval = null;
+
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+    ws.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'stats_update') {
+          document.getElementById('msg-count').textContent = d.messages ?? '—';
+          document.getElementById('mem-count').textContent = d.memories ?? '—';
+        }
+      } catch {}
+    };
+    ws.onclose = () => setTimeout(connectWS, 2000);
+  }
+
+  async function loadStats() {
+    try {
+      const [stats, obs, plugins] = await Promise.all([
+        fetch('/api/stats').then(r => r.json()),
+        fetch('/api/observability').then(r => r.json()),
+        fetch('/api/plugins').then(r => r.json()),
+      ]);
+      document.getElementById('msg-count').textContent = stats.messages ?? '—';
+      document.getElementById('mem-count').textContent = stats.memories ?? '—';
+      document.getElementById('session-count').textContent = stats.sessions ?? '—';
+      document.getElementById('provider-name').textContent = stats.provider ?? '—';
+      document.getElementById('model-name').textContent = stats.model?.split('/').pop() ?? '—';
+      document.getElementById('ram-pct').textContent = stats.memory_usage_pct != null ? stats.memory_usage_pct + '%' : '—';
+      document.getElementById('uptime').textContent = 'Uptime: ' + (stats.uptime || '—');
+
+      // Chart
+      const chart = document.getElementById('obs-chart');
+      if (obs.chart?.length) {
+        const max = Math.max(...obs.chart.map(h => h.tokens), 1);
+        chart.innerHTML = obs.chart.map(h => {
+          const pct = Math.max(2, (h.tokens / max) * 100);
+          return `<div class="bar" style="height:${pct}%" title="${h.hour}: ${h.tokens} tokens"></div>`;
+        }).join('');
+      } else {
+        chart.innerHTML = '<span style="color:#444;font-size:0.8rem;">Sin datos</span>';
+      }
+
+      // Errors
+      const errList = document.getElementById('error-list');
+      if (obs.errors?.length) {
+        errList.innerHTML = obs.errors.slice(0, 10).map(e =>
+          `<div class="err-item"><span class="src">${e.source}</span>: ${e.message?.substring(0, 100)}</div>`
+        ).join('');
+      } else {
+        errList.innerHTML = '<span style="color:#444;font-size:0.8rem;">Sin errores</span>';
+      }
+
+      // Plugins
+      const pl = document.getElementById('plugin-list');
+      if (plugins.plugins?.length) {
+        pl.innerHTML = plugins.plugins.map(p =>
+          `<div class="plugin-item">
+            <div><span class="name">${p.name}</span> <span style="color:#555;">v${p.version}</span>
+            <div class="desc">${p.description}</div></div>
+            <button onclick="unloadPlugin('${p.name}')">✕</button>
+          </div>`
+        ).join('');
+      } else {
+        pl.innerHTML = '<span style="color:#444;font-size:0.8rem;">Sin plugins</span>';
+      }
+
+      // System info
+      const si = document.getElementById('sys-info');
+      const cats = stats.categories ? Object.entries(stats.categories).map(([k, v]) =>
+        `<div class="row"><span class="label">${k}</span><span>${v}</span></div>`
+      ).join('') : '';
+      si.innerHTML = `
+        <div class="row"><span class="label">Conexiones WS</span><span>${stats.ws_connections ?? 0}</span></div>
+        <div class="row"><span class="label">Categorías</span><span></span></div>
+        ${cats}
+      `;
+    } catch {}
+  }
+
+  async function unloadPlugin(name) {
+    await fetch('/api/plugins/unload?name=' + name, {method: 'POST'});
+    loadStats();
+  }
+
+  connectWS();
+  loadStats();
+  statsInterval = setInterval(loadStats, 5000);
+</script>
+</body>
+</html>
